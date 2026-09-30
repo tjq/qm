@@ -15,64 +15,64 @@ Read all of this before you change QM. It says what QM promises, not how it work
 
 ## 1. Scopes and identity
 
-A scope is a person, a channel, a group or a project. Each has its own memory, files, keychain view, crons, apps and computer. A turn runs as one real human and sees only what that human and scope are entitled to. Sharing always takes an explicit grant. Agents don't grasp social context on their own, so the boundaries have to hold it. Admin reads are audited.
+`identity/identity-service.ts` resolves every Slack and web actor to one principal, keyed by verified work email. `resolution/` turns that principal and the room into a scope and computes what the turn may see: `scope-membership.ts` for who's in the room, `audience-floor.ts` for the least-privileged person present, and `sharing-posture.ts` for Open vs. scoped reads. Grants on artifacts live in `acl/acl-store.ts`. `security/security-posture.ts` sets autonomy per scope (Dangerous, Auto, Strict), and `security-screener.ts` screens untrusted content. Admin reads go through `admin/admin-service.ts` and are audited in `admin/postgres-audit-log.ts`.
 
-Shame: compaction summaries carried private content into a shared channel. Setup consent written into memory was treated as authorization.
+Shame: compaction summaries carried private content into a shared channel. Setup consent written into memory was treated as authorization. A batch workspace's Slack email was trusted as a staff identity.
 
 ## 2. Turns and sessions
 
-A session is one ordered transcript. A turn claims it, commits as it goes, and can hand off to a new worker mid-turn. Stop works like a kernel interrupt and reaches every descendant. A new message steers or queues; it never silently kills the turn.
+The core loop is `core/orchestrator.ts`, which assembles context from `orchestrator/prompt-blocks.ts`, runs the harness and commits results. `runs/worker.ts` claims runs from `runs/postgres-run-store.ts`. The session lease in `sessions/postgres-session-store.ts` makes sure only one writer touches a transcript. Transcripts are `session_entries`, with `session_tape` as the replay record, folded back into context by `harness/tape-fold.ts`. Mid-turn messages arrive through `sessions/session-mailbox.ts`. `orchestrator/compaction.ts` summarizes history when context fills up. `runs/drain.ts` and `reaper.ts` handle deploys and dead workers.
 
-Shame: a boot-time recount took a global lock and forced a deploy rollback. Stop waited on a subagent that never got the cancel. New messages pre-empted turns, and the work vanished.
+Shame: a boot-time recount in the session store took a global advisory lock and forced a deploy rollback. Stop waited on a subagent that never got the cancel. New messages pre-empted turns, and the work vanished.
 
 ## 3. Harnesses and models
 
-A runtime is one unit: harness, model, effort and fast mode. Every harness drives the same core. An invalid combination is an error. Menus show what the provider actually offers, under the provider's own names. The agent can change its own runtime, for example to get around a refusal.
+`harness/harness-router.ts` picks among `pi-harness.ts`, `codex-harness.ts`, `claude-harness.ts` and `opencode-harness.ts`. All of them expose the one tool catalog in `harness/agent-tools.ts`, backed by `tools/primitives.ts`. `model/model-catalog.ts` and `gateway-catalog.ts` define which models exist, their effort levels and their prices (`pi-models.ts`). The agent swaps runtimes through `harness/runtime-control.ts`. Goals and grinds are `harness/goal.ts`.
 
-Shame: harnesses silently dropped the chosen effort level. A response cache replayed one malformed tool call and logged 24 successes. A regex refusal ladder, since deleted.
+Shame: harnesses silently dropped the chosen effort level. A gateway response cache replayed one malformed tool call and logged 24 successes. A regex refusal ladder, since deleted.
 
 ## 4. Sandboxes
 
-Every scope has a default computer, and the agent can reach for others. Providers are interchangeable. A dead box is a fact to report, not a verdict: the agent finishes the job somewhere else. Nothing locks a whole machine.
+`sandbox/sandbox.ts` is the provider contract. Implementations: `e2b-`, `modal-`, `sprites-`, `aws-`, `porter-`, `superserve-`, `agent37-`, `smolmachines-` and `local-sandbox.ts`. `sandbox-resources.ts` is the list of computers. `sandbox-routing.ts` maps each scope to its default. `home-snapshot.ts` tars `$HOME` to S3 so a scope can move providers. Execs share `exec-sandbox-base.ts`, and `orchestrator/sandboxes.ts` turns provider failures into facts the agent can act on.
 
-Shame: distinct failures collapsed into "wedged, restart it," with retries promised and never scheduled. Execs queued behind a five-minute machine lock. A failed snapshot retried on every turn, forever.
+Shame: distinct failures collapsed into "wedged, restart it," with retries promised and never scheduled. Execs queued behind a five-minute per-machine advisory lock. A failed snapshot retried on every turn, forever.
 
 ## 5. Credentials
 
-Keep secrets out of the sandbox where possible. Brokered calls get the secret added on the server side. Anything materialized lives only for the command that asked for it. Using a credential across scopes needs a grant approved by its owner. New secrets arrive through a secret-drop link, never through chat.
+`credentials/keychain.ts` holds each person's logins. `secret-drop.ts` mints the one-time links that fill it. `connectors/oauth.ts` refreshes connected apps. Brokered calls go through `api/credential-broker.ts` and `git-http-broker.ts`, which add the secret on the server side. Sandbox egress runs through `deploy/egress-proxy`, which checks the per-turn token from `auth/capability-token.ts`. Whatever does get materialized is scoped to one command, and `security/secret-masking.ts` keeps it out of transcripts. Cross-scope use needs an owner-approved grant (`credentials/keychain-approval.ts`, `triggers/keychain-ask.ts`).
 
-Shame: env-delivered org credentials skipped the broker's grant check. A token in a git remote leaked into a transcript.
+Shame: env-delivered org credentials skipped the broker's grant check. The git broker skipped app-liveness checks. A token in a git remote leaked into a transcript.
 
 ## 6. Memory, guidance and skills
 
-Memory is an append-only index of durable facts. It is neither a datastore nor authorization. Guidance holds standing orders. Skills are procedures owned by a scope, shared by grant and promoted to the org by an admin.
+Memory is `memory/memory-service.ts` over a per-scope notebook (`notebook.ts`), recalled each turn via `recall-delta.ts`. It's an append-only index, not a datastore or a permission. Guidance is the scope's standing orders, edited through the `guidance` tool. Skills live in `skills/skill-store.ts`, arrive from packs through `skill-sync-engine.ts`, and are copied onto the sandbox only when a command asks (`materialize.ts`).
 
 Shame: superseded instructions lingered in memory and conflicted with new ones.
 
 ## 7. Background work
 
-Crons, Loops, webhooks and grinds (goals with a budget) run with their owner's authority and report where they were created. Start with a smart model, then downgrade it, or replace it with a script once the task is understood. A non-owner's edit waits for the owner's approval. A fire that can't do its job says so.
+Crons are `cron/scheduler.ts` on pg-boss (`job-queue.ts`), and `cron/authority.ts` decides whose credentials a fire runs with. Loops are `loops/runner.ts`, with sources feeding `ingress.ts`, an item ledger for the Inbox, and `governor.ts` limiting spend. Webhooks enter through `webhooks/webhook-receiver.ts`, and subagents are background runs (`runs/background-controller.ts`). Non-owner edits go through `triggers/edit-notice.ts`. Start with a smart model, then downgrade it or swap in a script once the task is understood.
 
 Shame: Loop intake ran with its tools stripped and fired 50 times in six hours. Two concurrent fires double-sent a report. A 100-task quota blocked real work.
 
 ## 8. Surfaces
 
-Slack and web are two views of the same sessions. Each should look native. Text arrives first and heavy content loads lazily. Model-only context never reaches the browser. An ack means "I'm working on this."
+`slack/` and `plugins/web-ui` are two views of the same sessions. Slack delivery is `slack/delivery.ts` (ack emoji in `ack-emoji.ts`, approvals in `approval-cards.ts`). Web delivery is `delivery/web-transcript-delivery.ts`. Each should look native. Text arrives first and heavy content loads lazily. Model-only context never reaches the browser.
 
 Shame: a byte cap hid earlier turns. Memory blocks were shipped to the browser. The agent said "attached" without attaching.
 
 ## 9. Apps and files
 
-Apps are private by default and shared like docs. External access stays off until an admin turns it on. Files inherit their scope's permissions.
+`deploy/deploy-service.ts` publishes apps as immutable versions across the `docker-`, `fly-`, `aws-` and `porter-deploy-provider.ts` backends. Every request passes core's viewer check (`deploy/viewer-session.ts`). Apps are private by default and shared like docs, and external access is an admin flag that defaults to off. Files are `files/file-artifact-store.ts` over `durable-byte-store.ts`, and they inherit their scope's permissions.
 
 Shame: public app links were on by default.
 
 ## 10. Deploy and release
 
-Blue/green, with handoff at a safe point inside a short grace window. Downstream deployments pin a qm release. Merged is not live, so verify against the running release.
+The `cli/` (`qm deploy`, `qm check --live`) runs blue/green releases. Terraform under `deploy/stacks` and `aws/` provisions the infrastructure. Downstream deployments pin a qm release. At deploy time, a turn hands off at a safe point within a short grace window. Merged is not live, so verify against the running release.
 
-Shame: deploys waited for a drain that never comes. One schema bug silently took down every sandbox for an hour.
+Shame: deploys waited for a drain that never comes. One tool-schema bug silently took down every sandbox for an hour.
 
 ## Editing this spec
 
-Write contracts, not mechanisms. No dates, PR numbers or status. Stay near 1,000 words. When a mistake costs real time, add one line to the relevant wall of shame in the PR that fixes it.
+Write contracts, not mechanisms. No dates, PR numbers or status. Name real modules, and update this file in the same PR that renames or deletes one. Stay near this length. When a mistake costs real time, add one line to the relevant wall of shame in the PR that fixes it.
