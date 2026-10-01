@@ -6,13 +6,13 @@ Read this before you change QM. It describes the target. Where the code falls sh
 
 1. **Unhobbling.** Frontier models are usually smarter than we allow them to be. Effective intelligence grows with capabilities exposed.
 2. **Free the claw.** Sessions, memory and state live in Postgres, and the agent can read them. Sandboxes and models are resources the agent chooses and switches between as the work demands.
-3. **Primitives.** Keep the harness thin: run commands on a computer, read and write files, publish apps. Everything else is a patch over a rough edge until a primitive can absorb it. Agent features are full sessions with the whole toolset, not bare model calls.
+3. **Primitives.** Keep the harness thin: run commands on a computer, read and write files, publish apps. Primitives are orthogonal, each doing one thing with no overlap, and higher-level functionality is composed from them rather than built beside them. Everything else is a patch over a rough edge until a primitive can absorb it. Agent features are full sessions with the whole toolset, not bare model calls.
 4. **Iterate fast.** Merge to production should take minutes. Speed is the best feature, and every bit of overhead we add should be measured and driven down.
 5. **Agent UX = human UX.** Tools, errors, hints and prompts are the agent's interface, so they get the same care as the web UI. Spend every context token on purpose.
 
 ## Subsystems, most central first
 
-**Turns and sessions.** A turn is a run: a worker claims it from the Postgres run queue, the orchestrator assembles context, runs a harness, and commits the result to the session transcript. One lease per session guarantees one writer. Deploys hand a live turn off at a safe point within a short grace window; they never wait for quiet. **Gap:** transcripts are written to both `session_entries` and `session_tape`, with a read-time heal between them, and `session_leases` duplicates the run lease.
+**Turns and sessions.** A turn is a run: a worker claims it from the Postgres run queue, the orchestrator assembles context, runs a harness, and commits the result to the session tape. One lease per session guarantees one writer. Deploys hand a live turn off at a safe point within a short grace window; they never wait for quiet. **Gap:** transcripts are written to both `session_entries` and `session_tape`, with a read-time heal between them, and `session_leases` duplicates the run lease.
 
 **Harnesses and models.** Pi, Codex, Claude Code and OpenCode are interchangeable harnesses over one tool catalog. The model catalog is the single source for which models exist, their effort levels and prices. A runtime is one value (harness, model, effort, fast), validated once; an unsupported combination is an error, not a silent fallback. **Gap:** the Pi harness regex-matches refusal text to fall back to other models; each harness classifies retryable errors its own way; goal spend is metered twice.
 
