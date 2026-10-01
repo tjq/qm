@@ -422,6 +422,7 @@ export type LoopItemPriority = "urgent" | "high" | "normal" | "low";
 
 export interface LoopItemTriage {
   at: number;
+  inputHash?: string;
   priority?: LoopItemPriority;
   reason?: string;
   groupId?: string;
