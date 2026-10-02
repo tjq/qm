@@ -118,6 +118,15 @@ test("a missed notification is recovered by the bounded recheck, and abort ends 
   controller.abort();
   assert.equal((await aborted).status, "timeout");
   assert.equal(app.reads.length, readsBeforeAbort);
+  const midRead = new AbortController();
+  const startedMidRead = Date.now();
+  const abortedMidRead = awaitContextOutcome(
+    { ...app, getContextRequest: async () => (midRead.abort(), { status: "pending" }) },
+    "req-3",
+    { waitMs: 10_000, recheckMs: 10_000, signal: midRead.signal },
+  );
+  assert.equal((await abortedMidRead).status, "timeout");
+  assert.ok(Date.now() - startedMidRead < 1_000);
   assert.equal(app.settled.size(), 0);
-  assert.deepEqual(app.deleted, ["req-1", "req-2"]);
+  assert.deepEqual(app.deleted, ["req-1", "req-2", "req-3"]);
 });

@@ -42,7 +42,7 @@ export async function awaitContextOutcome(
         return { status: "failed", ...(row.error !== undefined ? { error: row.error } : {}) };
       const remaining = deadline - Date.now();
       if (remaining <= 0) return { status: "timeout" };
-      if (woken) continue;
+      if (woken || opts.signal?.aborted) continue;
       await new Promise<void>((resolve) => {
         const timer = setTimeout(done, Math.min(recheckMs, remaining));
         opts.signal?.addEventListener("abort", done, { once: true });
