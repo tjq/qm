@@ -250,6 +250,19 @@ Patterns from this repo's history, with the PRs that introduced or removed them.
 - **qm-yc#664** (2026-06-19): A read-only query_brain tool plus a Fly/Tailscale relay (#663) was wired into core for one specific internal team knowledge server. *Status:* wound back (src/config.ts now warns that the brain env vars are 'retired and ignored — the brain integration was removed', pointing at generic MEMORY_PROVIDER_CONFIG).
 - **qm-yc#217** (2026-06-05): The generic orchestrator refreshed the ycli (YC-internal CLI) tool catalog on every Slack turn and had ycli-specific approval gating (#35). *Status:* wound back (no ycli references left in src/ on main).
 
+### Regex (8 examples)
+
+Regex standing in for a parser, a typed error, a stored field or a model call. Main has 1,443 production regex sites in 380 files; cleanup is LAB-166.
+
+- **qm-yc#336** (2026-06-09): Command-policy regexes failed open and missed `rm -fr`/`--recursive` variants, so the approval gate was bypassable. *Status:* patched; the shell scanner is still regex (src/policy/command-policy.ts).
+- **qm-yc#773** (2026-06-23): Command-policy regexes scanned heredoc payloads, so trigger words inside data tripped the approval gate. *Status:* patched; a related heredoc bug was found again in the Mythos triage.
+- **qm-yc#156** (2026-06-04): A per-line regex env-file parser corrupted multiline secrets. *Status:* wound back in qm-yc#156.
+- **qm-yc#2259** (2026-09-02): Ambiguous alternation in redactCommand's regex backtracked exponentially and blocked the event loop. *Status:* wound back in qm-yc#2259.
+- **qm-yc#2155** (2026-08-31): Modal's "sandbox gone" regex missed real terminated/detached errors and surfaced hard failures. *Status:* patched; still classifying by message text.
+- **qm-yc#2260** (2026-09-03): Cron ids were regex-extracted from provenance JSON on every deliveries row on each read. *Status:* wound back in qm-yc#2260 (stored column).
+- **qm-yc#2263** (2026-09-03): Session origin and cron id were re-derived from thread_ref by unindexable per-row regex. *Status:* wound back in qm-yc#2263 (columns added).
+- **qm#1612** (2026-09-24): An Anthropic refusal detector matched response text by regex and switched to fallback models. *Status:* deleted in qm#1612.
+
 ### YC info leaking into public qm (3 examples)
 
 - **qm#1504** (2026-09-22): Public docs/test fixtures had org-specific rollout guidance and identity examples plus 92 tracked screenshots (8.1 MB); scrubbed and AGENTS.md now bans committed screenshots. *Status:* wound back in qm#1504 (partially; YC welcome copy remains).
