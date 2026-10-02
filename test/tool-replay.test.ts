@@ -100,14 +100,32 @@ test("provider call IDs reused later cannot inherit an earlier completion", () =
   );
 });
 
-test("Claude native call IDs do not mark a completed bridge call uncertain", () => {
-  const call = entry("tool_call", { tool: "execute", callId: "bridge-1" });
-  const result = entry("tool_result", { callId: "bridge-1", result: "done" });
-  const claudeCall = {
-    kind: "message",
-    harness: "claude",
-    payload: { message: { role: "assistant", content: [{ type: "tool_use", id: "toolu_1", name: "execute" }] } },
-  } as TapeRecord;
-  assert.deepEqual(uncertainToolCalls([call, result], [claudeCall]), []);
-  assert.deepEqual(uncertainToolCalls([call], [claudeCall]), ["execute"]);
+test("a completed Claude bridge call is not uncertain when its native result echo is missing", () => {
+  const entries = [
+    { seq: 1, type: "tool_call", payload: { callId: "toolu_x", tool: "execute" } },
+    { seq: 2, type: "tool_result", payload: { callId: "toolu_x" } },
+  ] as unknown as Parameters<typeof uncertainToolCalls>[0];
+  const rows = [
+    {
+      kind: "message",
+      harness: "claude",
+      payload: {
+        message: { role: "assistant", content: [{ type: "tool_use", id: "toolu_x", name: "mcp__qm__execute" }] },
+      },
+    },
+  ] as unknown as Parameters<typeof uncertainToolCalls>[1];
+  assert.deepEqual(uncertainToolCalls(entries, rows), []);
+});
+
+test("a Claude native call the bridge never recorded is uncertain", () => {
+  const rows = [
+    {
+      kind: "message",
+      harness: "claude",
+      payload: {
+        message: { role: "assistant", content: [{ type: "tool_use", id: "toolu_y", name: "mcp__qm__execute" }] },
+      },
+    },
+  ] as unknown as Parameters<typeof uncertainToolCalls>[1];
+  assert.deepEqual(uncertainToolCalls([], rows), ["mcp__qm__execute"]);
 });

@@ -360,17 +360,20 @@ export function createClaudeHarness(opts: ClaudeHarnessOptions = {}): Harness {
       queue.close();
       controller.abort();
     };
+    const nativeUses = nativeToolUses();
     const definitions = bridged.map((definition) => {
       const schema = fromJSONSchema(definition.parameters as Parameters<typeof fromJSONSchema>[0]) as ZodObject;
       return tool(definition.name, definition.description, schema.shape, async (args, extra) => {
-        const callId = String(
-          (extra as { toolUseId?: string } | undefined)?.toolUseId ?? randomBytes(8).toString("hex"),
-        );
+        const callId =
+          (extra as { toolUseId?: string } | undefined)?.toolUseId ??
+          (await nativeUses.claim(`mcp__qm__${definition.name}`, args)) ??
+          randomBytes(8).toString("hex");
         try {
           const result = await definition.execute(callId, args);
           if (result.terminate || ref.pausedOnApproval || ref.silentRequested) setImmediate(terminateProvider);
           return { content: [{ type: "text", text: bridgedToolText(result) }] };
         } catch (error) {
+          if (error instanceof TurnHandedOff) setImmediate(terminateProvider);
           return {
             content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
             isError: true,
@@ -662,6 +665,7 @@ export function createClaudeHarness(opts: ClaudeHarnessOptions = {}): Harness {
                 entryCount: turn.history.length,
               });
           }
+          if (message.type === "assistant" && !message.parent_tool_use_id) nativeUses.observe(message.message.content);
           if (message.type === "assistant" || message.type === "user") {
             let tapeMessage: SDKMessage = message;
             let stamp: Awaited<ReturnType<typeof recordSteerIntake>> | undefined;
@@ -932,7 +936,7 @@ export function createClaudeHarness(opts: ClaudeHarnessOptions = {}): Harness {
       capabilities: new Set(["abort", "steer", "images", "thinking-level", "fast-mode"]),
     },
     {
-      runTurn: (turn) => runPrompt({ ...turn, handoff: undefined }),
+      runTurn: runPrompt,
       close: () => {
         for (const sdkQuery of active) sdkQuery.close();
         active.clear();
@@ -992,4 +996,34 @@ export function createClaudeHarness(opts: ClaudeHarnessOptions = {}): Harness {
       ...oneShotModelUtilities(single, judgeModelId),
     },
   );
+}
+
+function nativeToolUses() {
+  const uses: { id: string; name: string; input: string; claimed: boolean }[] = [];
+  let changed = Promise.withResolvers<void>();
+  const find = (name: string, input: string) =>
+    uses.find((u) => !u.claimed && u.name === name && u.input === input) ??
+    uses.find((u) => !u.claimed && u.name === name);
+  return {
+    observe(content: unknown) {
+      if (!Array.isArray(content)) return;
+      for (const block of content as { type?: string; id?: string; name?: string; input?: unknown }[])
+        if (block.type === "tool_use" && block.id && block.name && !uses.some((u) => u.id === block.id))
+          uses.push({ id: block.id, name: block.name, input: JSON.stringify(block.input ?? {}), claimed: false });
+      changed.resolve();
+      changed = Promise.withResolvers<void>();
+    },
+    async claim(name: string, args: unknown): Promise<string | undefined> {
+      const input = JSON.stringify(args ?? {});
+      const deadline = Date.now() + 500;
+      let use = find(name, input);
+      while (!use && Date.now() < deadline) {
+        await Promise.race([changed.promise, new Promise((r) => setTimeout(r, deadline - Date.now()))]);
+        use = find(name, input);
+      }
+      if (!use) return undefined;
+      use.claimed = true;
+      return use.id;
+    },
+  };
 }

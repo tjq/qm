@@ -763,7 +763,7 @@ test("Claude deadline hands off even when the SDK interrupt never settles", { ti
   }
 });
 
-test("Claude keeps running tools after a committed-step handoff request until its deadline", async () => {
+test("Claude stops dispatching new tools once a committed-step handoff is requested", async () => {
   const requested = new AbortController();
   let ran = 0;
   currentScript = async function* (prompts) {
@@ -784,11 +784,11 @@ test("Claude keeps running tools after a committed-step handoff request until it
       },
     } as unknown as HarnessTurnInput["tools"],
   });
-  const result = await harness.turns.runTurn(turn);
-  assert.equal(result.handedOff, undefined);
-  assert.equal(result.reply, "finished before the deadline");
-  assert.equal(ran, 1);
-  assert.ok(!entries.some((entry) => (entry.payload as { notExecuted?: boolean }).notExecuted));
+  await harness.turns.runTurn(turn);
+  assert.equal(ran, 0);
+  assert.ok(
+    !entries.some((entry) => entry.type === "tool_result" && !(entry.payload as { notExecuted?: boolean }).notExecuted),
+  );
 });
 
 test("Claude deadline bounds SDK initialization", { timeout: 3000 }, async () => {
@@ -812,4 +812,39 @@ test("Claude deadline bounds SDK initialization", { timeout: 3000 }, async () =>
     release.resolve();
     await harness.turns.close?.();
   }
+});
+
+test("Claude bridge calls carry the native tool_use id so recorded outcomes match the transcript", async () => {
+  const seen: string[] = [];
+  currentScript = async function* (prompts) {
+    await prompts[Symbol.asyncIterator]().next();
+    yield {
+      type: "assistant",
+      message: {
+        id: "msg_tool",
+        role: "assistant",
+        content: [{ type: "tool_use", id: "toolu_native_1", name: "mcp__qm__runtime", input: { action: "get" } }],
+        usage: {},
+      },
+      parent_tool_use_id: null,
+    };
+    await toolHandlers.get("runtime")!({ action: "get" });
+    yield resultMessage("done");
+  };
+  const harness = createClaudeHarness({});
+  const { turn, entries } = harnessTurn({
+    readOnly: false,
+    tools: {
+      runtime: async (callId: string) => {
+        seen.push(callId);
+        return { ok: true };
+      },
+    } as unknown as HarnessTurnInput["tools"],
+  });
+  await harness.turns.runTurn(turn);
+  const ids = [
+    ...seen,
+    ...entries.map((entry) => (entry.payload as { callId?: string } | null)?.callId).filter(Boolean),
+  ];
+  assert.ok(ids.includes("toolu_native_1"), `bridge call ids: ${ids.join(",")}`);
 });
