@@ -1944,6 +1944,21 @@ const apiRoutes: readonly WebRoute[] = [
   },
   {
     method: "GET",
+    path: "/api/sessions/:id/swarm",
+    handle: async (c) => relayCore(c.res, "GET", `/v1/sessions/${encodeURIComponent(c.params.id!)}/swarm`),
+  },
+  {
+    method: "POST",
+    path: "/api/sessions/:id/swarm",
+    handle: async (c) => {
+      const body = await readJson<{ action?: unknown }>(c.req, c.res, false);
+      if (!body) return;
+      if (body.action !== "control") return json(c.res, 400, { error: "only swarm controls are available here" });
+      return relayCore(c.res, "POST", `/v1/sessions/${encodeURIComponent(c.params.id!)}/swarm`, JSON.stringify(body));
+    },
+  },
+  {
+    method: "GET",
     path: "/api/sessions/:id/approvals",
     handle: async (c) => {
       const { res, user } = c;
@@ -2892,6 +2907,17 @@ const apiRoutes: readonly WebRoute[] = [
         `/v1/loops/${encodeURIComponent(c.params.id!)}/fire?principalId=${encodeURIComponent(user)}`,
       );
     },
+  },
+  {
+    method: "POST",
+    path: "/api/loops/:id/triage/preview",
+    handle: async ({ req, res, user, params }) =>
+      relayCore(
+        res,
+        "POST",
+        `/v1/loops/${encodeURIComponent(params.id!)}/triage/preview?principalId=${encodeURIComponent(user)}`,
+        await readBody(req),
+      ),
   },
   {
     method: "POST",

@@ -58,7 +58,8 @@
     "lint:ox": "oxlint --deny-warnings src plugins scripts cli test",
     "dev-instance:doctor": "bash scripts/dev-instance.sh doctor",
     "lint:knip": "knip",
-    "migrate:transcript-tape": "node scripts/migrate-transcript-tape.ts"
+    "migrate:transcript-tape": "node scripts/migrate-transcript-tape.ts",
+    "build:app-annotations": "node scripts/build-app-devbar.mjs"
   },
   "lint-staged": {
     "*": "prettier --write --ignore-unknown"
@@ -88,7 +89,7 @@
     "croner": "^10.0.1",
     "e2b": "^2.51.0",
     "emoji-datasource": "^16.0.0",
-    "fastify": "^5.12.1",
+    "fastify": "^5.12.5",
     "jose": "^6.2.3",
     "lru-cache": "^11.5.2",
     "modal": "^0.10.1",
@@ -104,7 +105,7 @@
   },
   "overrides": {
     "@hono/node-server": "2.0.10",
-    "hono": "4.13.5",
+    "hono": "4.13.9",
     "@fastify/ajv-compiler": {
       "fast-uri": "3.1.8"
     },
@@ -126,6 +127,7 @@
     "@types/pg": "^8.11.10",
     "@types/tar-stream": "^3.1.4",
     "@yc-software/qm": "file:./cli",
+    "devbar.sh": "1.1.0",
     "esbuild": "0.28.1",
     "eslint": "^10.4.1",
     "globals": "^17.6.0",

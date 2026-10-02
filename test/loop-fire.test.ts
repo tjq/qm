@@ -46,6 +46,7 @@ function service(
     turnResult?: TurnResult;
     grants?: ReturnType<typeof createShipGrantStore>;
     samePerson?: (a: string, b: string) => Promise<boolean>;
+    triageEnabledFor?: (owner: string) => Promise<boolean>;
   },
 ) {
   const loops = createLoopStore();
@@ -65,6 +66,7 @@ function service(
       admittedWork: overrides?.admittedWork,
       crons,
       samePerson: overrides?.samePerson,
+      triageEnabledFor: overrides?.triageEnabledFor ?? (async () => true),
       loops,
       items,
       outputs,
@@ -1167,4 +1169,118 @@ test("handed-off inbox synchronization is resumed rather than recorded as a fail
   assert.equal((await s.continuations.get("inbox-handoff"))?.result?.status, "silent");
   assert.equal(s.turns.length, 2);
   assert.equal(s.turns[0]?.idempotencyKey, s.turns[1]?.idempotencyKey);
+});
+
+test("triage groups a flood read-only so only the representative is worked, with the rest as evidence", async () => {
+  const s = service((req) => {
+    const text = req.text ?? "";
+    if (text.startsWith("[Loop triage]")) {
+      const ids = [...text.matchAll(/"id":"([^"]+)"/g)].map((match) => match[1]!);
+      return `\`\`\`json\n${JSON.stringify({
+        items: ids.map((id, index) => ({
+          id,
+          priority: index === 0 ? "urgent" : "low",
+          reason: "checkout is down",
+          ...(index > 0 ? { groupWith: ids[0] } : {}),
+        })),
+      })}\n\`\`\``;
+    }
+    if (stage(req) === "intake")
+      return '```json\n[{"sourceKey": "SENTRY-1", "sourceSummary": "TypeError"}, {"sourceKey": "SENTRY-2", "sourceSummary": "TypeError"}, {"sourceKey": "SENTRY-3", "sourceSummary": "TypeError"}]\n```';
+    return HAPPY(req);
+  });
+  const loop = await makeLoop(s.loops);
+  await s.loops.update(loop.id, {
+    triage: {
+      prioritize: { enabled: true, instructions: "production incidents first" },
+      consolidate: { enabled: true },
+    },
+  });
+  await s.fire.fire(loop.id, "f1");
+  const triageTurn = s.turns.find((turn) => turn.text?.startsWith("[Loop triage]"));
+  assert.equal(triageTurn?.readOnly, true);
+  assert.match(triageTurn?.text ?? "", /production incidents first/);
+  const workTurns = s.turns.filter((turn) => stage(turn) === "work");
+  assert.equal(workTurns.length, 1);
+  assert.match(workTurns[0]!.text ?? "", /similarItems/);
+  const items = await s.items.byLoop(loop.id);
+  const representative = items.find((item) => item.status === "ready")!;
+  assert.equal(representative.triage?.priority, "urgent");
+  assert.deepEqual(
+    items.filter((item) => item.id !== representative.id).map((item) => [item.status, item.triage?.groupId]),
+    [
+      ["queued", representative.id],
+      ["queued", representative.id],
+    ],
+  );
+});
+
+test("triage does not run for a loop whose owner lacks the loop_triage flag", async () => {
+  const s = service(HAPPY, { triageEnabledFor: async () => false });
+  const loop = await makeLoop(s.loops);
+  await s.loops.update(loop.id, { triage: { prioritize: { enabled: true }, consolidate: { enabled: true } } });
+  await s.fire.fire(loop.id, "f1");
+  assert.equal(
+    s.turns.some((turn) => turn.text?.startsWith("[Loop triage]")),
+    false,
+  );
+});
+
+test("a triage dry run regroups every open item with draft instructions and writes nothing", async () => {
+  const s = service((req) => {
+    const text = req.text ?? "";
+    if (text.startsWith("[Loop triage]")) {
+      const ids = [...text.matchAll(/"id":"([^"]+)"/g)].map((match) => match[1]!);
+      return `\`\`\`json\n${JSON.stringify({
+        items: ids.map((id, index) => ({
+          id,
+          priority: "high",
+          reason: "draft",
+          ...(index > 0 ? { groupWith: ids[0] } : {}),
+        })),
+      })}\n\`\`\``;
+    }
+    if (stage(req) === "intake")
+      return '```json\n[{"sourceKey": "SENTRY-1", "sourceSummary": "TypeError"}, {"sourceKey": "SENTRY-2", "sourceSummary": "TypeError"}]\n```';
+    return HAPPY(req);
+  });
+  const loop = await makeLoop(s.loops);
+  await s.fire.fire(loop.id, "f1");
+  const before = await s.items.byLoop(loop.id);
+  const preview = await s.fire.previewTriage(loop, {
+    prioritize: { enabled: true, instructions: "outages first" },
+    consolidate: { enabled: true },
+  });
+  const turn = s.turns.findLast((t) => t.text?.startsWith("[Loop triage]"));
+  assert.equal(turn?.readOnly, true);
+  assert.match(turn?.text ?? "", /outages first/);
+  assert.equal(preview.length, 2);
+  assert.ok(preview.every((entry) => entry.priority === "high" && entry.groupId));
+  assert.deepEqual(await s.items.byLoop(loop.id), before);
+});
+
+test("a handoff during triage resumes the fire instead of skipping triage", async () => {
+  let handoff = true;
+  const s = service((req) => {
+    const text = req.text ?? "";
+    if (text.startsWith("[Loop triage]")) {
+      if (handoff) {
+        handoff = false;
+        throw new TurnHandedOff();
+      }
+      const ids = [...text.matchAll(/"id":"([^"]+)"/g)].map((match) => match[1]!);
+      return `\`\`\`json\n${JSON.stringify({ items: ids.map((id) => ({ id, priority: "high", reason: "r" })) })}\n\`\`\``;
+    }
+    return HAPPY(req);
+  });
+  const loop = await makeLoop(s.loops);
+  await s.loops.update(loop.id, { triage: { prioritize: { enabled: true } } });
+  await assert.rejects(s.fire.fire(loop.id, "triage-handoff"), TurnHandedOff);
+  assert.equal(s.turns.filter((req) => stage(req) === "work").length, 0);
+  await s.recreate().fire(loop.id, "triage-handoff");
+  const item = (await s.items.byLoop(loop.id))[0]!;
+  assert.equal(item.triage?.priority, "high");
+  assert.equal(item.status, "ready");
+  assert.equal(s.turns.filter((req) => stage(req) === "intake").length, 1);
+  assert.equal(s.turns.filter((req) => stage(req) === "work").length, 1);
 });

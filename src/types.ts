@@ -207,6 +207,7 @@ export interface TriggerBase {
 export interface Destination {
   slackAccountId?: string;
   slackTeamId?: string;
+  slackPolicyNamespace?: string;
   keychainAskId?: string;
   deploymentAccess?: { deploymentId: string; requesterId: string };
   commandApprovalId?: string;
@@ -353,6 +354,16 @@ export interface LoopGovernorConfig {
   staleFireMs?: number;
 }
 
+interface LoopTriageSetting {
+  enabled: boolean;
+  instructions?: string;
+}
+
+export interface LoopTriageConfig {
+  prioritize?: LoopTriageSetting;
+  consolidate?: LoopTriageSetting;
+}
+
 interface LoopPlaybookRevision {
   version: number;
   at: number;
@@ -375,6 +386,7 @@ export interface Loop extends TriggerBase {
   shipActions: ShipActionPolicy[];
   caps?: LoopCaps;
   governor?: LoopGovernorConfig;
+  triage?: LoopTriageConfig;
   state: LoopState;
   health: LoopHealth;
   healthReason?: string;
@@ -406,8 +418,19 @@ export interface LoopThreadMessage {
   actorId?: string;
 }
 
+export type LoopItemPriority = "urgent" | "high" | "normal" | "low";
+
+export interface LoopItemTriage {
+  at: number;
+  priority?: LoopItemPriority;
+  reason?: string;
+  groupId?: string;
+  pinned?: Array<"priority" | "group">;
+}
+
 export interface LoopItem {
   previousLoopId?: string;
+  triage?: LoopItemTriage;
   inboxPreview?: LoopSourcePayload;
   id: string;
   loopId: string;
@@ -635,12 +658,13 @@ export interface ClientToolResult {
 }
 
 export interface TurnRequest {
-  slackSource?: { accountId: string; teamId: string; userId: string };
+  slackSource?: { accountId: string; teamId: string; userId: string; externalPolicyNamespace?: string };
   externalSlack?: {
     accountId: string;
     teamId: string;
     userId: string;
     companyDomains: string[];
+    companyTeamIds: string[];
     serviceCredentials: string[];
   };
   sessionSenderId?: string;

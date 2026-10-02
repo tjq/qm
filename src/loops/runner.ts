@@ -7,6 +7,7 @@ import { isRunnable } from "./loop-store.ts";
 import { decideShip, outputCandidate, undeclaredShipActions } from "./ship-gate.ts";
 import type { SuccessVerdict } from "./success-evaluation.ts";
 import type { ShipGrant } from "../types.ts";
+import { workOrder } from "./triage.ts";
 
 export class LoopFireDeferred extends Error {}
 
@@ -19,6 +20,7 @@ export type CapturedArtifact = Omit<CaptureOutputInput, "loopId" | "itemId" | "a
 
 export interface LoopRunnerEffects {
   enumerate(loop: Loop): Promise<IntakeCandidate[]>;
+  triage?(loop: Loop): Promise<void>;
   work(input: { loop: Loop; item: LoopItem; guidance?: string }): Promise<{ runId: string }>;
   captureOutputs(input: { loop: Loop; item: LoopItem; runId: string }): Promise<CapturedArtifact[]>;
   evaluate(input: { loop: Loop; item: LoopItem; attempt: number; runId: string }): Promise<SuccessVerdict>;
@@ -117,7 +119,11 @@ export async function runLoopFire(
   }
   let batch = continuation?.progress.batch;
   if (!batch) {
-    const queued = await stores.items.queued(loop.id, loop.caps?.maxItemsPerFire);
+    await effects.triage?.(loop);
+    const queued = workOrder(loop, await stores.items.queued(loop.id), await stores.items.byLoop(loop.id)).slice(
+      0,
+      loop.caps?.maxItemsPerFire,
+    );
     batch = (loop.throttle ? queued.slice(0, Math.max(1, Math.floor(queued.length / 2))) : queued).map(
       (item) => item.id,
     );

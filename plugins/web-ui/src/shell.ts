@@ -104,6 +104,7 @@ import {
   routeInboxHistory,
 } from "./inbox";
 import { openSkillById, renderSkills, resetActiveSkill, routeSkillsHistory } from "./skills";
+import { watchAppAnnotations } from "./app-annotations";
 import { applyTheme, renderSettings, watchSystemTheme } from "./settings";
 import { contextsState, ensureContexts, renderContexts, resetContextsState, resolveProjectScope } from "./contexts";
 import { appState, can, canView, isView, type AuthMode, type Me, type View } from "./shell-state";
@@ -261,9 +262,11 @@ export async function signOut(): Promise<void> {
     return;
   }
   let endedSession: boolean;
+  let redirectTo = "/";
   try {
     const r = await fetch("/auth/logout", { method: "POST", headers: { accept: "application/json" } });
     endedSession = r.ok;
+    if (r.ok) redirectTo = ((await r.json()) as { redirectTo?: string }).redirectTo ?? "/";
   } catch {
     endedSession = false;
   }
@@ -272,7 +275,7 @@ export async function signOut(): Promise<void> {
     return;
   }
   clearPortalAttempt();
-  location.href = "/";
+  location.href = redirectTo;
 }
 
 export async function exitImpersonation(): Promise<void> {
@@ -1201,6 +1204,10 @@ export async function boot(): Promise<void> {
     const slug = (params.get("slug") ?? "").toLowerCase();
     if (/^[a-z0-9-]{1,63}$/.test(slug)) {
       openAppEditChat(slug);
+      if (params.get("embed") === "1")
+        watchAppAnnotations(slug, (text, files, id, remove) =>
+          mainConversation().composer.addAnnotations(text, files, id, remove),
+        );
       return;
     }
     showMainEmpty("This edit link is missing a valid app name.");

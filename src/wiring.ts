@@ -1553,7 +1553,10 @@ export function buildApp(
           runs,
           sandboxes: sandboxResources,
           lock: advisoryLock,
+          signals: runSignals,
+          enabled: (actorId) => featureFlags.enabled("swarms", scopeId("personal", actorId)),
           authorize: async (claims) => {
+            if (!(await featureFlags.enabled("swarms", scopeId("personal", claims.actorId)))) return false;
             await identity.refresh();
             return (
               identity.isInternal(identity.classify(claims.actorId)) &&
@@ -2429,6 +2432,7 @@ export function buildApp(
     crons,
     samePerson: (a, b) => app.samePerson(a, b),
     continuations: artifactMap("loop_fire_continuations"),
+    triageEnabledFor: (owner) => featureFlags.enabled("loop_triage", scopeId("personal", owner)),
     lock: advisoryLock,
     loops: loopStore,
     items: loopItems,

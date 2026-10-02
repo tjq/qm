@@ -720,6 +720,7 @@ export function createOpenCodeHarness(opts: OpenCodeHarnessOptions = {}): Harnes
                   m.id,
                   {
                     name: m.name ?? m.id,
+                    reasoning: m.reasoning ?? false,
                     ...(m.contextWindow || m.maxTokens
                       ? {
                           limit: {
