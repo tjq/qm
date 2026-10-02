@@ -250,7 +250,7 @@ Patterns from this repo's history, with the PRs that introduced or removed them.
 - **qm-yc#664** (2026-06-19): A read-only query_brain tool plus a Fly/Tailscale relay (#663) was wired into core for one specific internal team knowledge server. *Status:* wound back (src/config.ts now warns that the brain env vars are 'retired and ignored — the brain integration was removed', pointing at generic MEMORY_PROVIDER_CONFIG).
 - **qm-yc#217** (2026-06-05): The generic orchestrator refreshed the ycli (YC-internal CLI) tool catalog on every Slack turn and had ycli-specific approval gating (#35). *Status:* wound back (no ycli references left in src/ on main).
 
-### Regex (8 examples)
+### Regex (7 examples)
 
 Regex standing in for a parser, a typed error, a stored field or a model call. Main has 1,443 production regex sites in 380 files; cleanup is LAB-166.
 
@@ -261,7 +261,6 @@ Regex standing in for a parser, a typed error, a stored field or a model call. M
 - **qm-yc#2155** (2026-08-31): Modal's "sandbox gone" regex missed real terminated/detached errors and surfaced hard failures. *Status:* patched; still classifying by message text.
 - **qm-yc#2260** (2026-09-03): Cron ids were regex-extracted from provenance JSON on every deliveries row on each read. *Status:* wound back in qm-yc#2260 (stored column).
 - **qm-yc#2263** (2026-09-03): Session origin and cron id were re-derived from thread_ref by unindexable per-row regex. *Status:* wound back in qm-yc#2263 (columns added).
-- **qm#1612** (2026-09-24): An Anthropic refusal detector matched response text by regex and switched to fallback models. *Status:* deleted in qm#1612.
 
 ### YC info leaking into public qm (3 examples)
 
