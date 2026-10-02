@@ -33,6 +33,7 @@ export async function awaitContextOutcome(
   }, nudge);
   try {
     for (;;) {
+      if (opts.signal?.aborted) return { status: "timeout" };
       woken = false;
       const row = await app.getContextRequest(requestId);
       if (!row) return { status: "timeout" };
@@ -40,7 +41,7 @@ export async function awaitContextOutcome(
       if (row.status === "failed")
         return { status: "failed", ...(row.error !== undefined ? { error: row.error } : {}) };
       const remaining = deadline - Date.now();
-      if (remaining <= 0 || opts.signal?.aborted) return { status: "timeout" };
+      if (remaining <= 0) return { status: "timeout" };
       if (woken) continue;
       await new Promise<void>((resolve) => {
         const timer = setTimeout(done, Math.min(recheckMs, remaining));

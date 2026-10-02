@@ -144,7 +144,8 @@ async function awaitOutcome(
 ): Promise<void> {
   const { res, app } = ctx;
   const controller = new AbortController();
-  res.once("close", () => controller.abort());
+  if (res.destroyed) controller.abort();
+  else res.once("close", () => controller.abort());
   const outcome = await awaitContextOutcome(app, requestId, { waitMs, signal: controller.signal });
   if (outcome.status === "done") return onDone(outcome.result);
   if (outcome.status === "failed") {

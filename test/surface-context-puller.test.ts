@@ -114,8 +114,10 @@ test("a missed notification is recovered by the bounded recheck, and abort ends 
   const controller = new AbortController();
   const aborted = awaitContextOutcome(app, "req-2", { waitMs: 10_000, signal: controller.signal });
   await new Promise((r) => setImmediate(r));
+  const readsBeforeAbort = app.reads.length;
   controller.abort();
   assert.equal((await aborted).status, "timeout");
+  assert.equal(app.reads.length, readsBeforeAbort);
   assert.equal(app.settled.size(), 0);
   assert.deepEqual(app.deleted, ["req-1", "req-2"]);
 });
