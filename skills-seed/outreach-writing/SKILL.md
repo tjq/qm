@@ -1,17 +1,19 @@
 ---
 name: outreach-writing
-description: Write cold outreach, sales and partnership follow-ups, intro requests and DMs that a busy stranger would actually answer. Find the reason they'd care before drafting, keep it short, and when the user says a draft sounds AI-written, too long, too pitchy or not compelling, fix what the message says rather than only its tone. Use for any email or DM that asks someone for their time, including polishing the user's own draft.
+description: Write cold outreach, sales and partnership follow-ups, intro requests and DMs that a busy stranger would actually answer. Find the reason they'd care before drafting, keep it short, and when the user says a draft sounds AI-written, too long, too pitchy or not compelling, fix what the message says rather than only its tone. Use for any email or DM that asks someone for their time, including polishing the user's own draft of one.
 ---
 
 # Outreach writing
 
-Use this for any message that asks someone for their time or attention: a cold email, a
-follow-up after a call, a bump on a quiet thread, an intro request, a partnership ping, or a
-Slack, LinkedIn, X or forum DM. Use it too when the user hands you their own rough draft to
-"formulate better".
+Use this for any message that asks someone for their time: a cold email, a follow-up after a
+call, a bump on a quiet thread, an intro request, a partnership ping, or a Slack, LinkedIn, X
+or forum DM. Use it too when the user hands you their own rough draft of one to "formulate
+better". It does not cover replies to someone's inbound question, transactional or support
+mail, internal messages, updates and announcements, or long-form writing.
 
-This skill decides what the message says and how long it is. A voice profile
-(`email-draft-in-voice`) decides phrasing, never length or substance. Read mail, CRM records
+This skill decides what the message says and how long it is; a voice profile
+(`email-draft-in-voice`) decides phrasing. The user's explicit instructions beat both: when
+they ask for a specific length, structure or level of detail, follow them. Read mail, CRM records
 and files through the selected access skill. This skill grants no send permission: show the
 exact text and send nothing without the user's explicit approval.
 
@@ -39,8 +41,10 @@ things for yourself:
 - **The ask.** One small, specific next step: a question they can answer in a line, 15
   minutes in a named week, an intro to a named person.
 
-If you cannot fill "why them" or "proof" with something specific, ask the user one short
-question ("Is there a pilot number we can share?") instead of padding with adjectives.
+Use professional context only (their role, company, public work), never personal details. If
+you cannot fill "why them" or "proof" with something specific, show the best draft you can
+make and ask the user one short question ("Is there a pilot number we can share?") instead of
+padding with adjectives.
 
 ## 2. Shape and length
 
@@ -48,8 +52,8 @@ Lead with them. Then one line on what the user does, framed as the outcome; the 
 ask. The user's name and company belong in the sign-off or a short clause, not in an
 introductory paragraph about themselves.
 
-Hard limits for the body, excluding subject, greeting and sign-off. Count the words before
-you show a draft.
+Default limits for the body, excluding subject, greeting and sign-off, unless the user asks
+for something else. Count the words before you show a draft.
 
 | Message                           | Target      | Cap            |
 | --------------------------------- | ----------- | -------------- |
@@ -59,8 +63,8 @@ you show a draft.
 | DM (Slack, LinkedIn, X, forum)    | 25-60 words | 80 words       |
 | LinkedIn connection note          |             | 300 characters |
 
-Subjects are two to six plain words a colleague might type ("AAPS next week?", "intro to your
-ops lead"), lowercase is fine. No colons, no title case, no "Quick question".
+Subjects are two to six plain words a colleague might type ("at the expo next week?", "intro to
+your ops lead"), lowercase is fine. No colons, no title case, no "Quick question".
 
 Cut anything about the sender that does not help the recipient decide: fundraising timelines,
 confidentiality caveats, team history, roadmap, feature lists, "an AI-powered platform". A
@@ -78,7 +82,9 @@ first name. Write the way people write to a peer: short sentences, contractions,
 
 ## 4. Human pass: change the seams, never the facts
 
-Remove these. Each one marks a message as machine-written:
+Remove these from wording you write. Each one marks a message as machine-written. Where the
+user's own drafts or voice profile show they really write a certain way (an exclamation mark,
+a particular greeting), keep their habit; this list is for what you add.
 
 - Em dashes or en dashes used as punctuation. Use a comma, a period or parentheses.
 - More than one exclamation mark in the message. None is better.
@@ -130,9 +136,10 @@ Never answer "too long", "too AI" or "friendlier" with a longer draft, and never
 questions or a promise to do better next time. If tone feedback lands a second time on the
 same message, stop rewording: name what is missing in one line, look for it in the user's
 files, notes and memory, show the best draft you can make with what exists, and ask one
-question to get the rest ("Is there a result we can share?"). Save corrections that will recur,
-such as "no exclamation marks" or "always mention the conference", to memory so the next
-batch starts there.
+question to get the rest ("Is there a result we can share?"). When a correction will recur,
+offer phrasing rules (such as "no exclamation marks") for the voice profile, and save content
+preferences (such as "always mention the conference") to memory, so the next batch starts
+there.
 
 ## Before and after
 
@@ -178,5 +185,5 @@ fundraise, "let us know what works!". After (55 words):
 claim and a booking link. After (about 40 words):
 
 > Hey Chris, saw your post about losing a week to SOC 2 evidence screenshots. That's the exact
-> thing we automate at Ledgerwise; two teams in our batch got their evidence pull under a day.
+> thing we automate at Ledgerwise; two teams we work with got their evidence pull under a day.
 > Happy to share how they set it up if useful.
