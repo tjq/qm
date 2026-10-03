@@ -8,6 +8,7 @@
 
 import type { ConnectorTokenStore } from "../credentials/keychain.ts";
 import type { AuditLog } from "../audit/audit-log.ts";
+import { createKeyedQueue } from "../util/async.ts";
 import { errMessage } from "../util/errors.ts";
 import { createMcpClient, mcpResultText, type McpAuth, type McpClient, type McpFetch } from "./mcp-client.ts";
 import type { McpServer, McpServerStore } from "./mcp-server-store.ts";
@@ -57,6 +58,7 @@ export function createMcpToolService(opts: {
   const clients = new Map<string, { client: McpClient; server: McpServer }>();
   let snapshot: McpToolDescriptor[] = [];
   let closed = false;
+  const perUserCalls = createKeyedQueue<string>();
 
   function record(action: string, resource: string, status: string, principalId?: string): void {
     opts.audit?.record({
@@ -145,7 +147,11 @@ export function createMcpToolService(opts: {
       const server = await opts.servers.get(def.serverId);
       if (!server || !server.enabled) throw new Error(`MCP server ${def.serverId} is not available`);
       try {
-        const result = await (await callerClient(server, principalId)).callTool(def.remoteName, args);
+        const run = async () => (await callerClient(server, principalId)).callTool(def.remoteName, args);
+        const result =
+          server.credentialScope === "per-user"
+            ? await perUserCalls(`${server.id}\u0000${principalId ?? ""}`, run)
+            : await run();
         record("call", `${def.serverId}/${def.remoteName}`, "ok", principalId);
         const text = mcpResultText(result) || JSON.stringify(result.structuredContent ?? "") || "";
         return text.length > MAX_RESULT_CHARS ? `${text.slice(0, MAX_RESULT_CHARS)}\n[truncated]` : text;
