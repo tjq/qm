@@ -18,6 +18,8 @@ Use the current credential manifest to choose an account authorized for this con
 that fits the user's intent. Personal and shared accounts are both valid choices; neither
 is an automatic fallback when the other fails. If the intended account is unclear before
 a write, ask. Do not infer permission from a login merely being present on the computer.
+Match the account to the task: a credential set up for reviewing may not be allowed to
+push, so pick one that can write before starting a change, and say which one you'll use.
 
 - **Personal login:** use the authorized `gh`, `glab`, or Git login. Check the active
   provider account (for example, `gh api user --jq .login`) and the Git transport's auth
@@ -33,6 +35,25 @@ For an existing checkout, inspect the remote and applicable credential-helper, S
 proxy, and HTTP-header configuration. A reused checkout
 may still select a previous account. Commit author metadata is separate from transport
 identity. Resolve an unknown identity before a write; do not probe access by pushing.
+
+## Choose the destination repository
+
+Decide where the branch and PR will live before any write, and name that repository in
+the approval request.
+
+- Use the repository the user named, and any destination preference recorded in memory.
+- "A fork" or "our fork" means the fork the user's organization owns, not one in the
+  signed-in account's personal namespace. GitHub creates forks there by default, so it
+  says nothing about where the team works. If several forks fit and nothing is recorded,
+  ask.
+- Do not rely on `gh` remote resolution in a checkout whose `origin` is a fork or that
+  has several remotes. Pass both sides explicitly:
+  `gh pr create --repo BASE_OWNER/REPO --head HEAD_OWNER:BRANCH`. API tools take the
+  base repository as `owner`/`repo` and a cross-repository head as `HEAD_OWNER:BRANCH`.
+- After creating the PR, confirm the URL's `OWNER/REPO` is the intended base and
+  `gh pr view URL --json headRepositoryOwner,headRefName` is the intended head.
+- If the user corrects the destination, record the preference in memory, open the PR
+  in the right repository, and close the misplaced one with a link to its replacement.
 
 ## Logging in
 
@@ -95,7 +116,7 @@ prepare the branch and summary first.
 
 Pushing branches, creating PRs/MRs, merging, closing issues, editing labels, changing
 repo settings, releases, or workflows are writes. Ask for approval before running the
-write command.
+write command, naming the account and the destination repository.
 
 After approval:
 
@@ -112,6 +133,32 @@ glab mr create --repo GROUP/PROJECT --title "..." --description-file mr.md
 ```
 
 Report the final URL and leave enough context for review.
+
+## When GitHub denies access
+
+A 403 means the credential lacks a grant, not that the login is missing. Do not switch
+accounts to get around it. Stop, tell the user exactly what to grant, and offer any other
+authorized account that fits the task.
+
+- Push rejected with `Permission to OWNER/REPO.git denied to USER`: a fine-grained token
+  needs **Contents: Read and write**, plus **Workflows: Read and write** when the push
+  touches `.github/workflows/`; a classic token needs `repo`, plus `workflow`.
+- `Resource not accessible by personal access token` from check runs, `gh pr checks`, or
+  `statusCheckRollup`: **Checks: Read-only** and **Commit statuses: Read-only**. Public
+  repositories expose checks without them, so one token can work on public repos and
+  fail on private ones.
+- The same error from workflow runs or job logs: **Actions: Read-only**.
+- The same error creating, editing, or reviewing a PR: **Pull requests: Read and write**.
+- `Resource not accessible by integration`: the GitHub App lacks that permission or
+  repository; an org owner updates the installation and accepts the new permissions.
+- `Resource protected by organization SAML enforcement`: authorize the token or OAuth app
+  for SSO in that organization.
+
+For other endpoints, `gh api -i PATH` shows the `X-Accepted-GitHub-Permissions` header
+naming the permission required. A fine-grained token reaches only repositories under its
+one resource owner, and the organization may have to approve it. Pushing to a
+contributor's PR branch in another account's fork also needs that PR to allow edits by
+maintainers.
 
 ## Wait for GitHub CI
 
