@@ -1097,13 +1097,16 @@ export function createToolContext(deps: ToolContextDeps): ToolContext {
         }
         return { scope, permission: s.permission };
       });
-      const appRef = input.renameFrom ?? input.name;
-      const current = appRef !== undefined ? await deps.deploy.getDeployment(appRef) : null;
-      const label = current?.name ?? appRef ?? "new app";
-      if (input.public === true && current?.public !== true) requireVisibilityApproval(label, "public");
-      if (orgScopeId && resolvedShare?.some((s) => s.scope === orgScopeId)) {
-        const granted = current ? await deps.deploy.deploymentGrantees(current.id) : [];
-        if (!granted.some((g) => g.scope === orgScopeId)) requireVisibilityApproval(label, "org");
+      const widensToOrg = orgScopeId !== null && resolvedShare?.some((s) => s.scope === orgScopeId) === true;
+      if (input.public === true || widensToOrg) {
+        const appRef = input.renameFrom ?? input.name;
+        const current = appRef !== undefined ? await deps.deploy.getDeployment(appRef) : null;
+        const label = current?.name ?? appRef ?? "new app";
+        if (input.public === true && current?.public !== true) requireVisibilityApproval(label, "public");
+        if (widensToOrg) {
+          const granted = current ? await deps.deploy.deploymentGrantees(current.id) : [];
+          if (!granted.some((g) => g.scope === orgScopeId)) requireVisibilityApproval(label, "org");
+        }
       }
       return once(async () => {
         const d = await deps.deploy.deployOrUpdate({
