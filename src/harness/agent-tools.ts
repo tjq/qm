@@ -4037,6 +4037,7 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
         );
       }
       ref.goal = record;
+      if (ref.goalMeter) ref.goalMeter.tokens = 0;
       return recordCoreAuthoredResult(
         callId,
         { tool: "goal", action: "create", goal: record },

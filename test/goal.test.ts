@@ -270,13 +270,14 @@ test("goalFloorUnmet applies only to active goals and counts only active time", 
   assert.equal(goalFloorUnmet(floorless, meter), false);
 });
 
-test("goalFloorMeter counts the goal's own cumulative tokens, not the turn's", () => {
+test("goalFloorMeter adds the running round's tokens to the goal's banked tokens", () => {
   const meter = createGrindMeter();
-  meterGrindUsage(meter, { input: 500, output: 500, costUsd: 0 } as never);
   const goal = createGoalRecord({ objective: "work", floor: { minTokens: 800 } });
-  assert.equal(goalFloorUnmet(goal, meter), true, "turn tokens from before the goal do not count");
-  goal.tokensUsed = 900;
-  assert.equal(goalFloorUnmet(goal, meter), false);
+  goal.tokensUsed = 300;
+  meterGrindUsage(meter, { input: 400, output: 0, costUsd: 0 } as never);
+  assert.equal(goalFloorUnmet(goal, meter), true);
+  meterGrindUsage(meter, { input: 100, output: 0, costUsd: 0 } as never);
+  assert.equal(goalFloorUnmet(goal, meter), false, "a floor met mid-round is met now, not at round end");
 });
 
 test("createGoalRecord keeps a multi-day time floor as given", () => {

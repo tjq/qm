@@ -139,6 +139,11 @@ for (const capabilities of [new Set(), new Set(["native-tape"])] as Capabilities
     assert.equal(calls[0]!.goalMeter!.usd.toFixed(2), "1.20");
     assert.equal(latestGoalRecord(emitted)?.tokensUsed, 300, "the round that completes the goal still counts");
     assert.equal(taped.filter((rec) => rec.payload.entry?.payload?.kind === "goal").length, 1);
+    assert.deepEqual(
+      emitted.filter((e) => e.type === "user").map((e) => (e.payload as { hidden?: boolean }).hidden === true),
+      [false, true, true],
+      "continuation notes are hidden from the transcript",
+    );
   });
 }
 

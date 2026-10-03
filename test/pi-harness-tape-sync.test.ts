@@ -628,6 +628,14 @@ test("Pi goals run through the router loop and meter the recorded usage until th
     const persisted = latestGoalRecord(sink.entries)!;
     assert.equal(persisted.status, "active");
     assert.equal(persisted.tokensUsed, 24);
+    assert.deepEqual(
+      sink.entries.filter((e) => e.type === "user").map((e) => (e.payload as { hidden?: boolean }).hidden === true),
+      [false, true, true],
+    );
+    assert.deepEqual(
+      sink.tape.filter((rec) => rec.meta?.bareText !== undefined).map((rec) => rec.meta?.hidden === true),
+      [false, true, true],
+    );
     assert.ok(sink.tape.some((rec) => (rec.payload as { entry?: { type?: string } }).entry?.type === "system"));
   } finally {
     globalThis.fetch = realFetch;

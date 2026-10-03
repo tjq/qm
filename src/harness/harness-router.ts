@@ -63,13 +63,12 @@ async function runTurnEnforcingGoal(
         }
       : {}),
   };
-  let roundStartTokens = 0;
   let result = await adapter.turns.runTurn(dispatched);
   const goal: GoalRecord | null = latestGoalRecord(emitted) ?? rehydrateOpenGoal(input.history);
   if (!goal) return result;
   const account = () => {
-    if (goal.status !== "paused") goal.tokensUsed += meter.tokens - roundStartTokens;
-    roundStartTokens = meter.tokens;
+    if (goal.status !== "paused") goal.tokensUsed += meter.tokens;
+    meter.tokens = 0;
   };
   account();
   const floorCap = createFloorCapPolicy({
@@ -99,8 +98,21 @@ async function runTurnEnforcingGoal(
     },
     prompt: async (note) => {
       const remaining = goalFloorUnmet(goal, meter) ? undefined : remainingWallMs();
+      const isNote = (payload: unknown) => (payload as { text?: unknown } | null)?.text === note;
       result = await adapter.turns.runTurn({
         ...dispatched,
+        emit: (entry) =>
+          dispatched.emit(
+            entry.type === "user" && isNote(entry.payload)
+              ? { ...entry, payload: { ...(entry.payload as object), hidden: true } }
+              : entry,
+          ),
+        ...(dispatched.tape
+          ? {
+              tape: (rec: NewTapeRecord) =>
+                dispatched.tape!(rec.meta?.bareText === note ? { ...rec, meta: { ...rec.meta, hidden: true } } : rec),
+            }
+          : {}),
         ...(input.tapeRows ? { tapeRows: [...input.tapeRows, ...taped] } : {}),
         ...(input.tapeFold ? { tapeFold: [...input.tapeFold, ...foldTape(taped)] } : {}),
         input: note,

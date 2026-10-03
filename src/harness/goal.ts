@@ -275,7 +275,7 @@ export function bankGoalTurn(goal: GoalRecord, turnStartedAt: number, now = Date
 export function goalFloorMeter(goal: GoalRecord, meter: GrindMeter, now = Date.now()): GrindMeter {
   return {
     turns: meter.turns,
-    tokens: goal.tokensUsed,
+    tokens: goal.tokensUsed + meter.tokens,
     usd: meter.usd,
     startedAt: now - goalActiveMs(goal, meter.startedAt, now),
   };
