@@ -46,11 +46,11 @@ test("provider skills are visible only for connectors configured by the admin", 
   );
 });
 
-test("the credential-backed Composio skill needs no dedicated OAuth configuration", () => {
+test("Composio and connector-independent task skills need no dedicated OAuth configuration", () => {
   assert.deepEqual(
-    filterConnectorSkills([skill("composio"), skill("google-workspace")], []).map(
+    filterConnectorSkills([skill("composio"), skill("outreach-writing"), skill("google-workspace")], []).map(
       (entry) => entry.skill?.manifest.name,
     ),
-    ["composio"],
+    ["composio", "outreach-writing"],
   );
 });

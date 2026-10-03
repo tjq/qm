@@ -8,6 +8,10 @@ description: Draft Gmail in the user's own voice from the voice profile built by
 Use this when the user asks you to write or reply to email _as them_ — "draft a reply
 to this", "write back to her for me", "answer my inbox in my voice".
 
+For cold outreach, sales follow-ups and other email that asks someone for their time, also
+follow `outreach-writing`: it sets what the message says and how long it is, and the profile
+sets the phrasing.
+
 ## Load the profile first — never freehand
 
 Read `voice/email-voice-profile.md` from the workspace. If it doesn't exist, run the
