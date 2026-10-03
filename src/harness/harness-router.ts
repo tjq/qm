@@ -104,7 +104,7 @@ async function runTurnEnforcingGoal(
         emit: (entry) =>
           dispatched.emit(
             entry.type === "user" && isNote(entry.payload)
-              ? { ...entry, payload: { ...(entry.payload as object), hidden: true } }
+              ? { ...entry, payload: { ...(entry.payload as object), steered: true, hidden: true } }
               : entry,
           ),
         ...(dispatched.tape
@@ -124,6 +124,8 @@ async function runTurnEnforcingGoal(
       return blocked() ? "halted" : "ok";
     },
   });
+  const latest = latestGoalRecord(emitted);
+  if (latest && latest.createdAt !== goal.createdAt) return result;
   if (result.stopped && (result.stoppedByUser || !input.cancel?.aborted) && goal.status === "active") {
     goal.status = "paused";
     goal.updatedAt = Date.now();

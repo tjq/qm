@@ -147,6 +147,23 @@ for (const capabilities of [new Set(), new Set(["native-tape"])] as Capabilities
   });
 }
 
+test("a goal created after the first one completes is not overwritten by the first goal's snapshot", async () => {
+  const emitted: SessionEntry[] = [];
+  const { harness } = fakeAdapter(async (turn, round) => {
+    if (round === 0) {
+      await emitGoalCreate(turn, "first");
+      return { reply: "working" };
+    }
+    turn.goal!.status = "complete";
+    await turn.emit({ type: "tool_result", payload: { tool: "goal", goal: { ...turn.goal } }, scopeLabel: scope });
+    const next = createGoalRecord({ objective: "second", now: turn.goal!.createdAt + 1 });
+    await turn.emit({ type: "tool_result", payload: { tool: "goal", goal: next }, scopeLabel: scope });
+    return { reply: "on to the next" };
+  });
+  await router(harness).turns.runTurn(stubTurn(emitted));
+  assert.equal(rehydrateOpenGoal(emitted)?.objective, "second");
+});
+
 test("a stopped turn pauses the goal instead of continuing it", async () => {
   const emitted: SessionEntry[] = [];
   const { harness, calls } = fakeAdapter(async (turn) => {
