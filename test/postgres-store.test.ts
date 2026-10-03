@@ -3206,18 +3206,23 @@ test("pg context window preserves user memory checkpoints through compaction and
   }
 });
 
-test("Postgres stop marks come only from an explicit stop afterSeq", { skip }, async () => {
-  const s = createPostgresSessionStore(URL!);
-  const scope = scopeId("personal", "stop-marks");
-  const session = await s.getOrCreateByThread("pg-stop-marks", "dm", scope);
-  const { lease } = await s.acquireLease(session.id);
-  assert.ok(lease);
-  assert.deepEqual(await s.stopMarks(session.id), []);
-  await s.appendTape(lease, { kind: "stop", payload: { reason: "user" }, scopeLabel: scope });
-  const user = await s.append(lease, { type: "user", payload: { text: "go" }, scopeLabel: scope });
-  await s.appendTape(lease, { kind: "stop", payload: { reason: "user" }, scopeLabel: scope });
-  await s.append(lease, { type: "user", payload: { text: "again" }, scopeLabel: scope });
-  assert.deepEqual(await s.stopMarks(session.id), []);
-  await s.appendTape(lease, { kind: "stop", payload: { reason: "user", afterSeq: user.seq }, scopeLabel: scope });
-  assert.deepEqual(await s.stopMarks(session.id), [user.seq]);
-});
+test(
+  "Postgres stop marks the last entry a stopped run wrote, and nothing for a run that wrote nothing",
+  { skip },
+  async () => {
+    const s = createPostgresSessionStore(URL!);
+    const scope = scopeId("personal", "stop-marks");
+    const session = await s.getOrCreateByThread("pg-stop-marks", "dm", scope);
+    const { lease } = await s.acquireLease(session.id);
+    assert.ok(lease);
+    assert.deepEqual(await s.stopMarks(session.id), []);
+    await s.appendTape(lease, { kind: "stop", payload: { reason: "user", runId: "early" }, scopeLabel: scope });
+    const user = await s.append(lease, { type: "user", payload: { text: "go", runId: "r1" }, scopeLabel: scope });
+    await s.appendTape(lease, { kind: "stop", payload: { reason: "user", runId: "not-started" }, scopeLabel: scope });
+    assert.deepEqual(await s.stopMarks(session.id), []);
+    await s.appendTape(lease, { kind: "stop", payload: { reason: "user", runId: "r1" }, scopeLabel: scope });
+    assert.deepEqual(await s.stopMarks(session.id), [user.seq]);
+    assert.equal((await s.getRunUserEntry(session.id, "r1"))?.seq, user.seq);
+    assert.equal(await s.getRunUserEntry(session.id, "missing"), undefined);
+  },
+);

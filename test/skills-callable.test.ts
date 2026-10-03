@@ -137,7 +137,7 @@ test("skill files live only for the turn that loaded them", async () => {
 });
 
 test("a failed turn keeps renewing its session lease until sandbox cleanup finishes", async (t) => {
-  const { app, skills, sandbox, sessions } = freshApp();
+  const { app, skills, sandbox, sessions } = await withDefaultComputer(freshApp());
   await publishFileSkill(skills, "lease-helper");
   let renewals = 0;
   const renew = sessions.renewLease.bind(sessions);
@@ -167,7 +167,7 @@ test("a failed turn keeps renewing its session lease until sandbox cleanup finis
 });
 
 test("a resumed turn re-materializes authorized skill files at their recorded paths", async () => {
-  const { app, skills, sandbox } = freshApp();
+  const { app, skills, sandbox } = await withDefaultComputer(freshApp());
   const skill = await publishFileSkill(skills, "handoff-helper");
   const request = {
     surface: "test",
