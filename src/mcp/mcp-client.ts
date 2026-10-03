@@ -117,7 +117,7 @@ export interface McpClient {
   readonly base: string;
   readonly host: string;
   listTools(): Promise<McpRemoteTool[]>;
-  callTool(name: string, args: Record<string, unknown>): Promise<McpToolResult>;
+  callTool(name: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<McpToolResult>;
 }
 
 interface CachedToken {
@@ -138,9 +138,9 @@ export function createMcpClient(opts: {
   let cached: CachedToken | null = null;
   let rpcId = 0;
 
-  function post(url: string, headers: Record<string, string>, body: string): Promise<Response> {
-    const send = (signal: AbortSignal) => fetchImpl(url, { method: "POST", headers, body, signal });
-    return fetchWithRetry(send, "refused", { timeoutMs: MCP_REQUEST_TIMEOUT_MS });
+  function post(url: string, headers: Record<string, string>, body: string, signal?: AbortSignal): Promise<Response> {
+    const send = (combined: AbortSignal) => fetchImpl(url, { method: "POST", headers, body, signal: combined });
+    return fetchWithRetry(send, "refused", { timeoutMs: MCP_REQUEST_TIMEOUT_MS, ...(signal ? { signal } : {}) });
   }
 
   async function mintToken(clientId: string, clientSecret: string): Promise<string> {
@@ -170,12 +170,13 @@ export function createMcpClient(opts: {
     return { authorization: `Bearer ${await mintToken(auth.clientId, auth.clientSecret)}` };
   }
 
-  async function rpc(method: string, params: Record<string, unknown>): Promise<unknown> {
+  async function rpc(method: string, params: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
     const id = ++rpcId;
     const res = await post(
       `${base}/mcp`,
       { ...(await authHeaders()), "content-type": "application/json", accept: MCP_ACCEPT },
       JSON.stringify({ jsonrpc: "2.0", id, method, params }),
+      signal,
     );
     if (!res.ok) throw await httpFailure(`mcp ${method}`, res);
     const parsed = parseMcpEnvelope(await res.text(), res.headers.get("content-type"), id);
@@ -205,8 +206,8 @@ export function createMcpClient(opts: {
       }
       return out;
     },
-    async callTool(name, args) {
-      const result = (await rpc("tools/call", { name, arguments: args })) as McpToolResult;
+    async callTool(name, args, signal) {
+      const result = (await rpc("tools/call", { name, arguments: args }, signal)) as McpToolResult;
       if (result.isError) throw new Error(`mcp tool ${name} error: ${mcpResultText(result) || "(no detail)"}`);
       return result;
     },

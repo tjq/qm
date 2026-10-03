@@ -321,6 +321,40 @@ test("per-user calls run one at a time for each person and concurrently across p
   assert.equal(overallPeak, 2);
 });
 
+test("a stopped turn's queued per-user call is never sent", async (t) => {
+  const store = createMcpServerStore(createMemoryMap<McpServer>());
+  const users = tokenStore();
+  const host = "accounts.example.com";
+  await users.setConnectorToken(host, "internal:alice", { accessToken: "alice-token" });
+  const sent: string[] = [];
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  const service = createMcpToolService({
+    servers: store,
+    userTokens: users,
+    fetchImpl: async (_url, init) => {
+      const rpc = JSON.parse(init.body);
+      if (rpc.method === "tools/list") return jsonResponse({ result: { tools: TOOLS } });
+      sent.push(rpc.params.arguments.q);
+      if (rpc.params.arguments.q === "first") await held;
+      return jsonResponse({ result: { content: [{ type: "text", text: rpc.params.arguments.q }] } });
+    },
+  });
+  t.after(() => service.close());
+  await store.put(server({ credentialScope: "per-user", credentialHost: host }));
+  await service.refresh();
+  const stop = new AbortController();
+  const first = service.call("crm_query", { q: "first" }, "internal:alice");
+  const second = service.call("crm_query", { q: "second" }, "internal:alice", stop.signal);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  stop.abort();
+  await assert.rejects(second, { name: "AbortError" });
+  release();
+  assert.equal(await first, "first");
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.deepEqual(sent, ["first"]);
+});
+
 test("per-user connectors select an explicit account slot without falling back to another slot", async (t) => {
   const store = createMcpServerStore(createMemoryMap<McpServer>());
   const users = tokenStore();
