@@ -1,4 +1,4 @@
-import type { MaterializedDeploymentVersion } from "../src/deploy/deploy-provider.ts";
+import type { MaterializedVersion } from "../src/deploy/deploy-provider.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash, randomBytes } from "node:crypto";
@@ -210,10 +210,7 @@ function snapshot(files: Record<string, string | Uint8Array>): string {
   return dir;
 }
 
-function version(
-  snapshotDir: string,
-  over: Partial<MaterializedDeploymentVersion> = {},
-): MaterializedDeploymentVersion {
+function version(snapshotDir: string, over: Partial<MaterializedVersion> = {}): MaterializedVersion {
   return {
     commit: "a".repeat(40),
     version: 1,

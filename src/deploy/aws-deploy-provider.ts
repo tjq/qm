@@ -1,4 +1,4 @@
-import type { MaterializedDeploymentVersion } from "./deploy-provider.ts";
+import type { MaterializedVersion } from "./deploy-provider.ts";
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { orgId as configOrgId } from "../config.ts";
 import { AssumeRoleCommand, STSClient } from "@aws-sdk/client-sts";
@@ -484,7 +484,7 @@ export function createAwsDeployProvider(opts: AwsDeployProviderOptions): DeployP
     id: string,
     endpoint: string,
     fresh: boolean,
-    version: DeploymentVersion | MaterializedDeploymentVersion,
+    version: DeploymentVersion | MaterializedVersion,
     input?: DeployReconcileInput,
   ): Promise<void> {
     if (input?.gitBundle) {
@@ -613,7 +613,7 @@ export function createAwsDeployProvider(opts: AwsDeployProviderOptions): DeployP
 
   const place = async (
     d: Deployment,
-    version: DeploymentVersion | MaterializedDeploymentVersion,
+    version: DeploymentVersion | MaterializedVersion,
     input?: DeployReconcileInput,
   ): Promise<DeployEndpoint> => {
     ensureConfigured();

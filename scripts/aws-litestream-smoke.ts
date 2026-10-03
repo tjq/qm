@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import type { MaterializedDeploymentVersion } from "../src/deploy/deploy-provider.ts";
+import type { MaterializedVersion } from "../src/deploy/deploy-provider.ts";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -40,7 +40,7 @@ http.createServer((req, res) => {
 }).listen(process.env.PORT || 8081);
 `;
 
-function makeVersion(): MaterializedDeploymentVersion {
+function makeVersion(): MaterializedVersion {
   const snapshotDir = mkdtempSync(join(tmpdir(), "ls-smoke-app-"));
   writeFileSync(join(snapshotDir, "server.js"), APP);
   return { commit: "a".repeat(40), version: 1, createdAt: 0, entrypoint: "node server.js", snapshotDir };

@@ -1,4 +1,4 @@
-import type { MaterializedDeploymentVersion } from "../src/deploy/deploy-provider.ts";
+import type { MaterializedVersion } from "../src/deploy/deploy-provider.ts";
 import { test, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -52,8 +52,8 @@ const deployment = (id: string, name?: string): Deployment => ({
 function version(
   files: Record<string, string>,
   entrypoint: string,
-  extra: Partial<MaterializedDeploymentVersion> = {},
-): MaterializedDeploymentVersion {
+  extra: Partial<MaterializedVersion> = {},
+): MaterializedVersion {
   const snapshotDir = mkdtempSync(join(tmpdir(), "porter-deploy-snap-"));
   for (const [rel, body] of Object.entries(files)) {
     mkdirSync(dirname(join(snapshotDir, rel)), { recursive: true });

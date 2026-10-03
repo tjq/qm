@@ -1,4 +1,4 @@
-import type { MaterializedDeploymentVersion } from "../src/deploy/deploy-provider.ts";
+import type { MaterializedVersion } from "../src/deploy/deploy-provider.ts";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,7 +20,7 @@ const api = createMicrovmApi({ region, ...(awsDeploy.profile ? { profile: awsDep
 const store = createMemoryMap<StoredDeployBody>();
 const provider = createAwsDeployProvider({ ...awsDeploy, store });
 
-function makeVersion(v: number): MaterializedDeploymentVersion {
+function makeVersion(v: number): MaterializedVersion {
   const snapshotDir = mkdtempSync(join(tmpdir(), `aws-deploy-app-v${v}-`));
   writeFileSync(
     join(snapshotDir, "server.js"),

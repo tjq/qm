@@ -1,4 +1,4 @@
-import type { MaterializedDeploymentVersion } from "./deploy-provider.ts";
+import type { MaterializedVersion } from "./deploy-provider.ts";
 import type { Deployment } from "./deploy-store.ts";
 import type { DeployEndpoint, DeployProvider } from "./deploy-provider.ts";
 import { spawnDockerExec, type DockerExec } from "../sandbox/docker-exec.ts";
@@ -77,7 +77,7 @@ export function createDockerDeployProvider(opts: DockerDeployProviderOptions = {
   return {
     profile: { managedScaleToZero: false },
 
-    async apply(d: Deployment, version: MaterializedDeploymentVersion): Promise<DeployEndpoint> {
+    async apply(d: Deployment, version: MaterializedVersion): Promise<DeployEndpoint> {
       const net = await ensureNetwork(network(d));
       await dexec(["rm", "-f", name(d)]);
       const hostPort = allocPort(name(d));
