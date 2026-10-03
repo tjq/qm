@@ -903,7 +903,9 @@ export async function proxyDeploymentSubdomain(ctx: BaseCtx): Promise<boolean> {
     }
   }
   const isPageLoad =
-    ctx.method === "GET" && wantsHtml && (dest === undefined || dest === "document" || (dest === "iframe" && !bareApp));
+    ctx.method === "GET" &&
+    wantsHtml &&
+    (dest === undefined || dest === "document" || (dest === "iframe" && site !== "same-origin"));
   const recordPageView = (authMode: AppViewAuthMode): void => {
     if (!isPageLoad || !deployment || !deps.appPageViews) return;
     const forwardedIp = fromAppHost ? req.headers["x-qm-client-ip"] : undefined;

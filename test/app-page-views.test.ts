@@ -173,7 +173,7 @@ test("the owner's framed shell counts once, not again for the inner app frame", 
       Cookie: session("alice@example.com"),
     });
     assert.equal(shell.status, 200);
-    const inner = await get(h.port, "/?__qm_no_shell=1", {
+    const inner = await get(h.port, "/", {
       Accept: "text/html",
       "Sec-Fetch-Dest": "iframe",
       "Sec-Fetch-Site": "same-origin",
