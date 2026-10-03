@@ -139,6 +139,7 @@ import type {
 import { personalScope, scopeId } from "./types.ts";
 import { createAuditLog, type AuditLog } from "./audit/audit-log.ts";
 import { createPostgresAuditLog } from "./admin/postgres-audit-log.ts";
+import { createPostgresAppPageViewLog } from "./deploy/page-views.ts";
 import { createRateLimiter, type RateLimiter } from "./ratelimit/rate-limiter.ts";
 import { createPostgresRateLimiter } from "./ratelimit/postgres-rate-limiter.ts";
 import { createBudgetTracker, estimateCostUsd } from "./ratelimit/budget.ts";
@@ -2973,6 +2974,9 @@ export function serverDeps(
     ...(config.deployAppsSessionSecret ? { deployAppsSessionSecret: config.deployAppsSessionSecret } : {}),
     ...(config.deployAppsLoginUrl ? { deployAppsLoginUrl: config.deployAppsLoginUrl } : {}),
     ...(config.deployAppsLoginPath ? { deployAppsLoginPath: config.deployAppsLoginPath } : {}),
+    ...(config.databaseUrl && config.awsDeploy.appsDomain
+      ? { appPageViews: createPostgresAppPageViewLog(config.databaseUrl) }
+      : {}),
     scheduler: built.scheduler,
     webhookReceiver: built.webhookReceiver,
     loopIngress: built.loopIngress,
