@@ -407,6 +407,7 @@ export interface SessionEntry {
   seq?: number;
   parentSeq?: number | null;
   truncated?: boolean;
+  stopped?: boolean;
 }
 
 export interface ToolActivity {
@@ -2013,7 +2014,19 @@ export function entriesToMessages(entries: SessionEntry[], model?: Model<Api>): 
     pending = [];
     deliveryFiles = [];
   };
+  const markStopped = (at: number): void => {
+    spillHeldPosts();
+    const last = out[out.length - 1] as (AssistantWork & { role?: string }) | undefined;
+    if (!pending.length && !deliveryFiles.length && last?.role === "assistant" && last.stopReason !== "error") {
+      last.stopReason = "aborted";
+      return;
+    }
+    flushWork("", at, false, undefined, true);
+  };
+  let stopAt: number | undefined;
   for (const e of entries) {
+    if (stopAt !== undefined) markStopped(stopAt);
+    stopAt = e.stopped && e.type !== "assistant" ? e.createdAt : undefined;
     const payload = e.payload as {
       text?: string;
       display?: string;
@@ -2026,7 +2039,6 @@ export function entriesToMessages(entries: SessionEntry[], model?: Model<Api>): 
       ts?: string;
       workStartedAt?: number;
       workFinishedAt?: number;
-      stopped?: boolean;
       runId?: string;
     } | null;
     const text = payload?.text ?? "";
@@ -2108,7 +2120,7 @@ export function entriesToMessages(entries: SessionEntry[], model?: Model<Api>): 
         ...(typeof payload?.workStartedAt === "number" ? { startedAt: payload.workStartedAt } : {}),
         ...(typeof payload?.workFinishedAt === "number" ? { finishedAt: payload.workFinishedAt } : {}),
       };
-      const stopped = payload?.stopped === true || text.trim() === "(stopped)";
+      const stopped = e.stopped === true;
       if (text || pending.length || heldPosts.size || stopped) {
         spillHeldPosts();
         if (posted && text) {
@@ -2159,6 +2171,7 @@ export function entriesToMessages(entries: SessionEntry[], model?: Model<Api>): 
       }
     }
   }
+  if (stopAt !== undefined) markStopped(stopAt);
   spillHeldPosts();
   flushWork("");
   return out;

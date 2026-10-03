@@ -1483,9 +1483,7 @@ export function buildApp(
   const leaseTtlMs = config.leaseTtlMs;
   const maxAttempts = config.maxAttempts;
   const runStore =
-    runStoreKind === "postgres"
-      ? createPostgresRunStore(requireDbUrl("RUN_STORE"), { maxClaims: config.maxClaims })
-      : createMemoryRunStore({ maxClaims: config.maxClaims });
+    runStoreKind === "postgres" ? createPostgresRunStore(requireDbUrl("RUN_STORE")) : createMemoryRunStore();
   const blockingApprovalSessions = async (): Promise<Set<string>> =>
     new Set(
       (await approvals.entries())

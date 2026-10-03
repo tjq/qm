@@ -16,7 +16,7 @@ import type { OrchestratorInput } from "../src/core/orchestrator.ts";
 import type { Principal } from "../src/types.ts";
 import { replayableRequest } from "../src/core/orchestrator/turn-helpers.ts";
 import { TurnHandedOff } from "../src/core/turn-error.ts";
-import { claimsSpent, errorParks } from "../src/runs/run-store.ts";
+import { errorParks } from "../src/runs/run-store.ts";
 import { testConfig } from "./support/test-config.ts";
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -61,64 +61,25 @@ test("a run parks once the ERROR budget (error_attempts) is exhausted", async ()
   assert.match(parked?.result?.reason ?? "", /boom again/);
 });
 
-test("repeated lease-expiry reaps requeue forever without spending the error budget", async () => {
+test("a lease-expiry reap spends the error budget, so a crash loop parks at maxAttempts", async () => {
   const { runs } = createMemoryRunStore();
-  const r = (await runs.enqueue({ sessionId: "s1", request: turn, maxAttempts: 2 })).run;
-  const reaper = createReaper(runs, createMemorySessionStore(), { intervalMs: 60_000 });
-
-  for (let i = 0; i < 5; i++) {
-    await runs.claim("dead-worker", 10);
-    await sleep(20);
-    const swept = await reaper.sweep();
-    assert.equal(swept.requeued, 1, `reap ${i} requeues`);
-    assert.equal(swept.parked, 0, `reap ${i} does not park`);
-    const after = await runs.get(r.id);
-    assert.equal(after?.status, "pending", "reaped run is always back on the queue");
-    assert.equal(after?.errorAttempts, 0, "reaps never spend the error budget");
-  }
-  assert.equal((await runs.get(r.id))?.attempts, 5);
-});
-
-test("with maxClaims set, repeated lease-expiry reaps PARK the poison pill instead of requeuing forever", async () => {
-  const { runs } = createMemoryRunStore({ maxClaims: 3 });
-  const r = (await runs.enqueue({ sessionId: "s1", request: turn, maxAttempts: 99 })).run;
+  const r = (await runs.enqueue({ sessionId: "s1", request: turn, maxAttempts: 3 })).run;
   const reaper = createReaper(runs, createMemorySessionStore(), { intervalMs: 60_000 });
 
   for (let i = 1; i <= 2; i++) {
     await runs.claim("dead-worker", 10);
     await sleep(20);
-    const swept = await reaper.sweep();
-    assert.deepEqual(swept, { requeued: 1, parked: 0 }, `claim ${i} under the cap requeues`);
-    assert.equal((await runs.get(r.id))?.errorAttempts, 0, "a reap never spends the error budget");
+    assert.deepEqual(await reaper.sweep(), { requeued: 1, parked: 0 }, `reap ${i} requeues`);
+    assert.equal((await runs.get(r.id))?.errorAttempts, i);
   }
-
   await runs.claim("dead-worker", 10);
-  assert.equal((await runs.get(r.id))?.attempts, 3, "third claim reaches the cap");
   await sleep(20);
-  const swept = await reaper.sweep();
-  assert.deepEqual(swept, { requeued: 0, parked: 1 }, "at the claim cap the poison pill is parked");
-  const parked = await runs.get(r.id);
-  assert.equal(parked?.status, "failed", "parked run is terminal failed (loud)");
-  assert.equal(parked?.errorAttempts, 0, "the claim-cap park did not need the error budget");
-  assert.match(parked?.result?.reason ?? "", /suspected crash loop/);
-});
-
-test("a concrete error parks with its own message even when over the claim cap", async () => {
-  const { runs } = createMemoryRunStore({ maxClaims: 2 });
-  const r = (await runs.enqueue({ sessionId: "s1", request: turn, maxAttempts: 99 })).run;
-
-  let claimed = await runs.claim("w1", 10_000);
-  let failed = await runs.fail(r.id, claimed!.leaseToken!, "first boom", { retry: true });
-  assert.equal(failed.requeued, true);
-
-  claimed = await runs.claim("w2", 10_000);
-  assert.equal(claimed?.attempts, 2, "second claim reaches the cap");
-  failed = await runs.fail(r.id, claimed!.leaseToken!, "real boom", { retry: true });
-  assert.equal(failed.requeued, false, "over the claim cap, the error parks instead of requeuing");
-  const parked = await runs.get(r.id);
-  assert.equal(parked?.status, "failed");
-  assert.match(parked?.result?.reason ?? "", /real boom/, "the concrete error message is preserved");
-  assert.doesNotMatch(parked?.result?.reason ?? "", /crash loop/, "not masked by the crash-loop text");
+  assert.deepEqual(await reaper.sweep(), { requeued: 0, parked: 1 }, "the third crash parks the poison pill");
+  const parked = (await runs.get(r.id))!;
+  assert.equal(parked.status, "failed");
+  assert.equal(parked.errorAttempts, 3);
+  assert.equal(parked.attempts, 3);
+  assert.match(parked.result?.reason ?? "", /lease expired/);
 });
 
 test("only the leader instance's interval sweep reaps expired leases", async () => {
@@ -258,7 +219,7 @@ test("shutdown cancels before handback and holds both leases until the turn unwi
         await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
         await cleanup;
         await sessions.append(lease, { type: "system", payload: { kind: "checkpoint" }, scopeLabel: "personal:U1" });
-        return { status: "silent" as const, stopped: true };
+        throw new TurnHandedOff();
       } finally {
         await sessions.releaseLease(lease);
       }
@@ -274,6 +235,7 @@ test("shutdown cancels before handback and holds both leases until the turn unwi
   });
   await sleep(20);
   assert.equal(signal.aborted, true, "shutdown reaches the existing cancellation signal immediately");
+  assert.equal(signal.reason, "shutdown", "a post-drain release is labelled shutdown, never a user stop");
   assert.equal(released, false, "handback waits for the cancellation checkpoint and finally block");
   assert.equal(worker.busy(), true);
   assert.equal((await runs.get(enq.id))?.status, "running");
@@ -326,7 +288,7 @@ test("an uncooperative turn keeps both leases until it actually exits", async ()
   assert.equal(await runs.claim("replacement", 5_000), null);
   unblock();
   await handback;
-  assert.equal((await runs.get(enq.id))?.status, "pending");
+  assert.equal((await runs.get(enq.id))?.status, "done", "a turn that returns is complete, never replayed");
   assert.equal((await runs.get(enq.id))?.errorAttempts, 0);
   assert.ok((await sessions.acquireLease(session.id)).lease);
 });
@@ -816,8 +778,8 @@ function handoffOrchestrator(): { orchestrator: Orchestrator; started: Promise<v
 }
 
 test("a handoff request releases the in-flight run at its next committed step without spending a claim", async () => {
-  const { runs } = createMemoryRunStore({ maxClaims: 2 });
-  const enq = (await runs.enqueue({ sessionId: "t1", request: turn, maxAttempts: 3 })).run;
+  const { runs } = createMemoryRunStore();
+  const enq = (await runs.enqueue({ sessionId: "t1", request: turn, maxAttempts: 2 })).run;
   const gate = handoffOrchestrator();
 
   const worker = createWorker({ runs, orchestrator: gate.orchestrator, leaseTtlMs: 5_000, pollMs: 5 });
@@ -831,9 +793,7 @@ test("a handoff request releases the in-flight run at its next committed step wi
   const released = await runs.get(enq.id);
   assert.equal(released?.status, "pending", "the run went back to the queue instead of finishing or failing");
   assert.equal(released?.attempts, 1);
-  assert.equal(released?.handoffs, 1, "the release is recorded as a hand-off");
   assert.equal(released?.errorAttempts, 0, "a hand-off is not an error");
-  assert.equal(claimsSpent(released!), 0, "the hand-off does not count toward the claim budget");
 
   const next = createWorker({ runs, orchestrator: gate.orchestrator, leaseTtlMs: 5_000, pollMs: 5 });
   next.start();
@@ -843,8 +803,8 @@ test("a handoff request releases the in-flight run at its next committed step wi
   const again = await runs.get(enq.id);
   assert.equal(again?.status, "pending");
   assert.equal(again?.attempts, 2);
-  assert.equal(again?.handoffs, 2);
-  assert.equal(errorParks(again!, 2), false, "two hand-offs never park the run under a claim cap of two");
+  assert.equal(again?.errorAttempts, 0);
+  assert.equal(errorParks(again!), false, "hand-offs never move a run toward parking");
   assert.equal(gate.calls, 2);
 });
 

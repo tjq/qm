@@ -7,7 +7,6 @@ import {
   tapeEndsAtCommittedStep,
   planTapeSeed,
   rehydrateFoldImages,
-  tapeNeedsInterruptHeal,
 } from "../src/harness/tape-fold.ts";
 import { CONTEXT_SUMMARY_HEADER, INTERRUPTED_TOOL_RESULT } from "../src/harness/context-compaction.ts";
 import type { TapeRecord } from "../src/sessions/session-store.ts";
@@ -312,7 +311,6 @@ test("aborted assistant's dangling tool call is not healed — pi drops the mess
     row({ kind: "context_event", payload: { event: "interrupt" } }),
     user("next turn"),
   ];
-  assert.ok(!tapeNeedsInterruptHeal(rows.slice(0, 4)), "aborted dangler needs no heal");
   const out = foldTape(rows) as Array<{ role: string; toolCallId?: string }>;
   assert.ok(
     !out.some((m) => m.role === "toolResult" && m.toolCallId === "c9"),
@@ -350,7 +348,6 @@ test("a poisoned tape — errored assistants, consecutive users, pre-existing in
   const out = foldTape(rows) as Array<{ role: string; toolCallId?: string }>;
   assert.ok(!out.some((m) => m.role === "toolResult" && m.toolCallId === "c9"));
   assert.ok(lintFold(out).ok);
-  assert.ok(!tapeNeedsInterruptHeal(rows));
 });
 
 test("lintFold rejects a toolResult answering an aborted assistant's call", () => {
@@ -463,7 +460,6 @@ test("planTapeSeed serves a clean fold only in serve mode, falls back on defects
   seq = 0;
   const dangling = [user("q"), assistant([{ type: "toolCall", id: "c1", name: "t", arguments: {} }])] as TapeRecord[];
   assert.equal(planTapeSeed(dangling, "pi", "serve").seed, null, "lint failure falls back");
-  assert.ok(tapeNeedsInterruptHeal(dangling), "trailing dangling call is heal-able");
   seq = 0;
   const foreign = [row({ kind: "message", harness: "opencode", payload: { info: { role: "user" }, parts: [] } })];
   const skipped = planTapeSeed(foreign, "pi", "serve");
@@ -478,7 +474,6 @@ test("interrupt heal converts a heal-able tape into a servable one", () => {
     assistant([{ type: "toolCall", id: "c1", name: "t", arguments: {} }]),
     row({ kind: "context_event", payload: { event: "interrupt" } }),
   ];
-  assert.ok(!tapeNeedsInterruptHeal(rows), "healed tape needs no further heal");
   const plan = planTapeSeed(rows, "pi", "serve");
   assert.ok(plan.seed, "healed tape serves");
 });
@@ -736,25 +731,6 @@ test("compacted-away image refs consume no reads or hydration budget", async () 
   assert.ok(planTapeSeed(rows, "pi", "serve", hydrated).seed);
 });
 
-test("dangling calls heal only after every image is rehydrated", async () => {
-  seq = 0;
-  const rows = [
-    row({
-      kind: "message",
-      harness: "pi",
-      payload: { role: "user", content: [{ type: "image", artifactRef: "a1", mimeType: "image/png" }], timestamp: 1 },
-    }),
-    assistant([{ type: "toolCall", id: "c1", name: "exec", arguments: {} }], { harness: "pi" }),
-  ];
-  assert.ok(!tapeNeedsInterruptHeal(rows), "an unresolved image prevents durable mutation");
-  const hydrated = await rehydrateFoldImages(
-    foldTape(rows),
-    async () => ({ data: "aGk=", mimeType: "image/png", sizeBytes: 2 }),
-    2,
-  );
-  assert.ok(tapeNeedsInterruptHeal(rows, hydrated));
-});
-
 test("a fold ends at a committed step only when its last message is a tool result or user turn with no open calls", () => {
   const user = { role: "user", content: [{ type: "text", text: "go" }] };
   const call = { role: "assistant", content: [{ type: "toolCall", id: "c1", name: "exec", arguments: {} }] };
@@ -779,4 +755,19 @@ test("interrupted tool results cannot masquerade as a committed batch", () => {
     toolResult("c2", "done"),
   ];
   assert.equal(tapeEndsAtCommittedStep(foldTape(rows)), false);
+});
+
+test("Stop is replayed as platform metadata without rewriting the recorded messages", () => {
+  const request = user("old request");
+  const stopped = row({ kind: "stop", payload: { reason: "user" } });
+  const next = user("new request");
+  const rows = [request, stopped, next];
+  const before = structuredClone(rows);
+  const fold = foldTape(rows) as Array<{ role: string; content: Array<{ text: string }> }>;
+  assert.deepEqual(rows, before);
+  assert.deepEqual(
+    fold.map((message) => message.content[0]?.text),
+    ["old request", "[Request interrupted by user]", "new request"],
+  );
+  assert.equal(fold[1]?.role, "user");
 });

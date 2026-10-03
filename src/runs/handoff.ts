@@ -1,3 +1,14 @@
+export type TurnAbortReason = "user" | "shutdown" | "lease-lost";
+
+export function turnAbortReason(signal?: AbortSignal): TurnAbortReason | undefined {
+  if (!signal?.aborted) return undefined;
+  return signal.reason === "user" || signal.reason === "lease-lost" ? signal.reason : "shutdown";
+}
+
+export function isUserStop(signal?: AbortSignal): boolean {
+  return turnAbortReason(signal) === "user";
+}
+
 export interface HandoffSignals {
   requested: AbortSignal;
   deadline: AbortSignal;
@@ -24,11 +35,11 @@ export function createHandoff() {
       retiring.expiresAt = expiresAt;
       clearTimeout(retiring.timer);
       if (delay > 0) {
-        retiring.timer = setTimeout(() => retiring.deadline.abort(), delay);
+        retiring.timer = setTimeout(() => retiring.deadline.abort("shutdown"), delay);
         retiring.timer.unref?.();
       }
-      retiring.requested.abort();
-      if (delay === 0) retiring.deadline.abort();
+      retiring.requested.abort("shutdown");
+      if (delay === 0) retiring.deadline.abort("shutdown");
     },
     reset(): void {
       current = generation();

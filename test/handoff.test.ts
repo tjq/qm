@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createHandoff } from "../src/runs/handoff.ts";
+import { createHandoff, turnAbortReason, isUserStop } from "../src/runs/handoff.ts";
 import { sleep } from "../src/util/async.ts";
 
 test("returning leadership preserves the retiring generation's deadline", async () => {
@@ -25,4 +25,13 @@ test("shutdown can shorten but cannot extend a handoff deadline", async () => {
   handoff.request(10000);
   handoff.request(0);
   assert.equal(handoff.signals().deadline.aborted, true);
+});
+
+test("only an explicit user cancellation is a stop", () => {
+  assert.equal(turnAbortReason(new AbortController().signal), undefined);
+  for (const reason of ["user", "shutdown", "lease-lost", undefined]) {
+    const signal = AbortSignal.abort(reason);
+    assert.equal(turnAbortReason(signal), reason ?? "shutdown");
+    assert.equal(isUserStop(signal), reason === "user");
+  }
 });

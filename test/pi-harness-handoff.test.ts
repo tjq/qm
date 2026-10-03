@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { createMemoryRunSignalStore } from "../src/runs/run-signal-store.ts";
 import { createPiHarness } from "../src/harness/pi-harness.ts";
 import type { HarnessTurnInput } from "../src/harness/harness.ts";
 import type { NewEntry, NewTapeRecord } from "../src/sessions/session-store.ts";
@@ -94,63 +95,76 @@ function textReplyEvents(text: string): Array<Record<string, unknown>> {
   ];
 }
 
-test("a handoff waits for the running tool to commit, then the next worker continues without a new prompt", async () => {
-  const harness = createPiHarness({ apiKey: "sk-test" });
-  const handoff = new AbortController();
-  const sink: Sink = { entries: [], tape: [] };
-  const realFetch = globalThis.fetch;
-  const bodies: string[] = [];
-  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
-    bodies.push(String(init?.body ?? ""));
-    return sse(bodies.length === 1 ? toolUseEvents("make build") : textReplyEvents("picking up where we left off"));
-  }) as typeof globalThis.fetch;
-  const tools = {
-    execute: async () => {
-      handoff.abort();
-      return { stdout: "built", stderr: "", code: 0, timedOut: false };
-    },
-    sessionSyscalls: { receive: async () => [], acknowledge: async () => {} },
-  } as unknown as HarnessTurnInput["tools"];
-  try {
-    const first = await harness.turns.runTurn(
-      handoffTurn("safe-point", { handoff: handoff.signal, handoffDeadline: new AbortController().signal }, sink, {
-        tools,
-      }),
-    );
-    assert.equal(first.handedOff, true);
-    assert.equal(first.stopped, undefined);
-    assert.equal(bodies.length, 1);
-    assert.deepEqual(
-      sink.entries.map((entry) => entry.type),
-      ["user", "tool_call", "tool_result"],
-    );
-    const history = sink.entries.map(
-      (entry) =>
-        ({
-          ...entry,
-          sessionId: "safe-point",
-          createdAt: Date.now(),
-          scopeLabel: "personal:tester",
-        }) as unknown as SessionEntry,
-    );
-    const resumed: Sink = { entries: [], tape: [] };
-    const second = await harness.turns.runTurn(
-      handoffTurn(
-        "safe-point",
-        { handoff: new AbortController().signal, handoffDeadline: new AbortController().signal },
-        resumed,
-        { tools, continueTurn: true, history },
-      ),
-    );
-    assert.equal(second.reply, "picking up where we left off");
-    assert.equal(resumed.entries.filter((entry) => entry.type === "user").length, 0);
-    assert.match(bodies[1]!, /built/);
-    assert.doesNotMatch(bodies[1]!, /interrupted|Continue from where you left off/);
-  } finally {
-    globalThis.fetch = realFetch;
-    await harness.turns.close?.();
-  }
-});
+for (const withSteer of [false, true])
+  test(`handoff to a fresh worker${withSteer ? " with a queued steer" : ""} resumes after the committed tool`, async () => {
+    const signals = createMemoryRunSignalStore();
+    let harness = createPiHarness({ apiKey: "sk-test", signals });
+    const handoff = new AbortController();
+    const sink: Sink = { entries: [], tape: [] };
+    const realFetch = globalThis.fetch;
+    const bodies: string[] = [];
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      bodies.push(String(init?.body ?? ""));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return sse(bodies.length === 1 ? toolUseEvents("make build") : textReplyEvents("picking up where we left off"));
+    }) as typeof globalThis.fetch;
+    const tools = {
+      execute: async () => {
+        handoff.abort();
+        if (withSteer) {
+          await signals.send("safe-point-run", { kind: "steer", text: "also check the build output", ts: "steer-1" });
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        return { stdout: "built", stderr: "", code: 0, timedOut: false };
+      },
+      sessionSyscalls: { receive: async () => [], acknowledge: async () => {} },
+    } as unknown as HarnessTurnInput["tools"];
+    try {
+      const first = await harness.turns.runTurn(
+        handoffTurn("safe-point", { handoff: handoff.signal, handoffDeadline: new AbortController().signal }, sink, {
+          tools,
+          runId: "safe-point-run",
+        }),
+      );
+      assert.equal(first.handedOff, true);
+      assert.equal(first.stopped, undefined);
+      assert.equal(bodies.length, 1);
+      assert.deepEqual(
+        sink.entries.map((entry) => entry.type),
+        ["user", "tool_call", "tool_result"],
+      );
+      const history = sink.entries.map(
+        (entry) =>
+          ({
+            ...entry,
+            sessionId: "safe-point",
+            createdAt: Date.now(),
+            scopeLabel: "personal:tester",
+          }) as unknown as SessionEntry,
+      );
+      assert.equal((await signals.pending("safe-point-run")).length, withSteer ? 1 : 0);
+      await harness.turns.close?.();
+      harness = createPiHarness({ apiKey: "sk-test", signals });
+      const resumed: Sink = { entries: [], tape: [] };
+      const second = await harness.turns.runTurn(
+        handoffTurn(
+          "safe-point",
+          { handoff: new AbortController().signal, handoffDeadline: new AbortController().signal },
+          resumed,
+          { tools, continueTurn: true, history, runId: "safe-point-run" },
+        ),
+      );
+      assert.equal(second.reply, "picking up where we left off");
+      assert.equal(resumed.entries.filter((entry) => entry.type === "user").length, withSteer ? 1 : 0);
+      assert.equal((await signals.pending("safe-point-run")).length, 0);
+      if (withSteer) assert.ok(bodies.some((body) => body.includes("also check the build output")));
+      assert.match(bodies[1]!, /built/);
+      assert.doesNotMatch(bodies[1]!, /interrupted|Continue from where you left off/);
+    } finally {
+      globalThis.fetch = realFetch;
+      await harness.turns.close?.();
+    }
+  });
 
 test(
   "a command still running at the deadline leaves its outcome unrecorded and consumes no mail",

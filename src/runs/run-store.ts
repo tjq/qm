@@ -26,10 +26,8 @@ export interface Run {
   request: OrchestratorInput;
   result: TurnResult | null;
   deliveryState: RunDeliveryState | null;
-  turnUserSeq: number | null;
   dedupKey: string | null;
   attempts: number;
-  handoffs: number;
   errorAttempts: number;
   maxAttempts: number;
   leaseToken: string | null;
@@ -53,8 +51,6 @@ export interface EnqueueResult {
 }
 
 export interface RunStore {
-  readonly maxClaims?: number;
-
   subscribeAvailable?(listener: () => void, options?: SubscribeOptions & { pollMs?: number }): () => void;
 
   enqueue(input: EnqueueInput): Promise<EnqueueResult>;
@@ -68,7 +64,7 @@ export interface RunStore {
 
   heartbeat(runId: string, leaseToken: string, ttlMs: number): Promise<boolean>;
 
-  releaseLease(runId: string, leaseToken: string, opts?: { handoff?: boolean }): Promise<boolean>;
+  releaseLease(runId: string, leaseToken: string): Promise<boolean>;
 
   complete(runId: string, leaseToken: string, result: TurnResult): Promise<boolean>;
 
@@ -80,8 +76,6 @@ export interface RunStore {
   ): Promise<{ requeued: boolean }>;
 
   setDeliveryState(runId: string, leaseToken: string | null, state: RunDeliveryState): Promise<boolean>;
-
-  noteTurnUserSeq(runId: string, seq: number): Promise<boolean>;
 
   latestForThread(threadRef: string, opts?: { excludePrivateMessages?: boolean }): Promise<Run | null>;
   pendingReturns(limit?: number, afterId?: string): Promise<Run[]>;
@@ -124,15 +118,8 @@ export function releasesDedupKey(result: TurnResult): boolean {
   return result.refusalKind === "session_busy";
 }
 
-export function claimsSpent(run: Pick<Run, "attempts" | "handoffs">): number {
-  return Math.max(0, run.attempts - run.handoffs);
-}
-
-export function errorParks(
-  run: Pick<Run, "errorAttempts" | "maxAttempts" | "attempts" | "handoffs">,
-  maxClaims?: number,
-): boolean {
-  return run.errorAttempts + 1 >= run.maxAttempts || (maxClaims !== undefined && claimsSpent(run) >= maxClaims);
+export function errorParks(run: Pick<Run, "errorAttempts" | "maxAttempts">): boolean {
+  return run.errorAttempts + 1 >= run.maxAttempts;
 }
 
 export function leaseLapsed(run: Pick<Run, "status" | "leaseExpiresAt">, asOf: number): boolean {

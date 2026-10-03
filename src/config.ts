@@ -186,7 +186,6 @@ export interface Config {
   shutdownDrainMs: number;
   backgroundHandoffGraceMs: number;
   maxAttempts: number;
-  maxClaims: number;
   processReaperIntervalMs: number;
   approvalSummaryTimeoutMs: number;
   turnLeaseWaitMs: number;
@@ -939,7 +938,6 @@ export const CONFIG_DEFAULTS = {
   shutdownDrainMs: 10_000,
   backgroundHandoffGraceMs: 120_000,
   maxAttempts: 3,
-  maxClaims: 8,
   processReaperIntervalMs: 30_000,
 } as const;
 
@@ -1652,7 +1650,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       numEnvStrict("BACKGROUND_HANDOFF_GRACE_MS", env.BACKGROUND_HANDOFF_GRACE_MS) ??
       CONFIG_DEFAULTS.backgroundHandoffGraceMs,
     maxAttempts: numEnvStrict("MAX_ATTEMPTS", env.MAX_ATTEMPTS) ?? CONFIG_DEFAULTS.maxAttempts,
-    maxClaims: numEnvStrict("MAX_CLAIMS", env.MAX_CLAIMS) ?? CONFIG_DEFAULTS.maxClaims,
     processReaperIntervalMs:
       numEnvStrict("PROCESS_REAPER_INTERVAL_MS", env.PROCESS_REAPER_INTERVAL_MS) ??
       CONFIG_DEFAULTS.processReaperIntervalMs,

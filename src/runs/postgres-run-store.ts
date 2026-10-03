@@ -9,7 +9,7 @@ import type { TurnResult } from "../types.ts";
 import type { OrchestratorInput } from "../core/orchestrator.ts";
 import { resolveTurnOrigin } from "../core/turn-origin.ts";
 import type { EnqueueInput, EnqueueResult, ReapEvent, Run, RunDeliveryState, RunStore } from "./run-store.ts";
-import { isTerminal, releasesDedupKey, claimsSpent } from "./run-store.ts";
+import { isTerminal, releasesDedupKey } from "./run-store.ts";
 import { errMessage, swallow } from "../util/errors.ts";
 import type { LedgerBegin, ToolLedger } from "./tool-ledger.ts";
 
@@ -32,10 +32,8 @@ function rowToRun(r: Record<string, unknown>): Run {
     request: { ...request, origin: resolveTurnOrigin(request) },
     result: r.result != null ? (JSON.parse(r.result as string) as TurnResult) : null,
     deliveryState: r.delivery_state != null ? (JSON.parse(r.delivery_state as string) as RunDeliveryState) : null,
-    turnUserSeq: r.turn_user_seq != null ? Number(r.turn_user_seq) : null,
     dedupKey: (r.idempotency_key as string | null) ?? null,
     attempts: Number(r.attempts),
-    handoffs: Number(r.handoffs ?? 0),
     errorAttempts: Number(r.error_attempts),
     maxAttempts: Number(r.max_attempts),
     leaseToken: (r.lease_token as string | null) ?? null,
@@ -49,9 +47,8 @@ function rowToRun(r: Record<string, unknown>): Run {
 
 const FENCE_HOLD_MS = 600_000;
 
-export function createPostgresRunStore(connectionString: string, opts?: { maxClaims?: number }): PostgresRuntime {
+export function createPostgresRunStore(connectionString: string): PostgresRuntime {
   const available = createPostgresNotifyBus<null>(connectionString, "qm_run_available", "run availability");
-  const maxClaims = opts?.maxClaims ?? Number.POSITIVE_INFINITY;
   const events = new EventEmitter();
   events.setMaxListeners(0);
 
@@ -125,13 +122,6 @@ export function createPostgresRunStore(connectionString: string, opts?: { maxCla
         statements: [
           `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_runs_session_created_seq ON runs(session_id, created_at DESC, seq DESC)`,
           `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_runs_created ON runs(created_at DESC)`,
-        ],
-      },
-      {
-        id: "runs/store/0006-handoffs",
-        statements: [
-          `SET LOCAL lock_timeout = '3s'`,
-          `ALTER TABLE runs ADD COLUMN IF NOT EXISTS handoffs INT NOT NULL DEFAULT 0`,
         ],
       },
     ],
@@ -226,8 +216,7 @@ export function createPostgresRunStore(connectionString: string, opts?: { maxCla
     const ifExpiredAt = opts?.ifExpiredAt ?? null;
     const countsAsError = opts?.countsAsError ?? false;
     const errorAttemptsAfter = run.errorAttempts + (countsAsError ? 1 : 0);
-    const overClaimed = claimsSpent(run) >= maxClaims;
-    if (retry && errorAttemptsAfter < run.maxAttempts && !overClaimed) {
+    if (retry && errorAttemptsAfter < run.maxAttempts) {
       const { rowCount } = await q(
         `UPDATE runs SET status='pending', lease_token=NULL, lease_expires_at=NULL, worker_id=NULL,
            error_attempts=error_attempts+$4, retry_after=$5
@@ -236,11 +225,7 @@ export function createPostgresRunStore(connectionString: string, opts?: { maxCla
       );
       return { requeued: rowCount > 0, applied: rowCount > 0 };
     }
-    const reason =
-      !countsAsError && overClaimed && retry && errorAttemptsAfter < run.maxAttempts
-        ? `run parked after ${claimsSpent(run)} claims without completing (suspected crash loop)`
-        : error;
-    const result: TurnResult = { status: "failed", sessionId: run.sessionId, reason };
+    const result: TurnResult = { status: "failed", sessionId: run.sessionId, reason: error };
     const { rowCount } = await q(
       `UPDATE runs SET status='failed', result=$4, lease_token=NULL, lease_expires_at=NULL, worker_id=NULL, finished_at=$5,
          error_attempts=error_attempts+$6
@@ -295,7 +280,6 @@ export function createPostgresRunStore(connectionString: string, opts?: { maxCla
         }
       };
     },
-    ...(Number.isFinite(maxClaims) ? { maxClaims } : {}),
 
     async enqueue({ sessionId, request, dedupKey, maxAttempts = 3 }: EnqueueInput): Promise<EnqueueResult> {
       const id = randomUUID();
@@ -331,12 +315,10 @@ export function createPostgresRunStore(connectionString: string, opts?: { maxCla
       return rowCount > 0;
     },
 
-    async releaseLease(runId, leaseToken, opts): Promise<boolean> {
+    async releaseLease(runId, leaseToken): Promise<boolean> {
       const { rowCount } = await q(
-        `UPDATE runs SET status='pending', lease_token=NULL, lease_expires_at=NULL, worker_id=NULL,
-           handoffs=handoffs+$3
-         WHERE id=$1 AND lease_token=$2 AND status='running' RETURNING pg_notify('qm_run_available', 'null')`,
-        [runId, leaseToken, opts?.handoff ? 1 : 0],
+        "UPDATE runs SET status='pending', lease_token=NULL, lease_expires_at=NULL, worker_id=NULL WHERE id=$1 AND lease_token=$2 AND status='running' RETURNING pg_notify('qm_run_available', 'null')",
+        [runId, leaseToken],
       );
       return rowCount > 0;
     },
@@ -363,14 +345,6 @@ export function createPostgresRunStore(connectionString: string, opts?: { maxCla
           await retire(run, error, opts?.retry !== false, { countsAsError: true, retryAfterMs: opts?.retryAfterMs })
         ).requeued,
       };
-    },
-
-    async noteTurnUserSeq(runId: string, seq: number): Promise<boolean> {
-      const { rowCount } = await q("UPDATE runs SET turn_user_seq=$2 WHERE id=$1 AND turn_user_seq IS NULL", [
-        runId,
-        seq,
-      ]);
-      return rowCount > 0;
     },
 
     async setDeliveryState(runId: string, leaseToken: string | null, state: RunDeliveryState): Promise<boolean> {
@@ -402,7 +376,7 @@ export function createPostgresRunStore(connectionString: string, opts?: { maxCla
            UNION
            SELECT child.* FROM runs wake JOIN runs child
            ON child.id = substring(wake.idempotency_key FROM length('subagent-return:') + 1)
-           WHERE wake.status = 'pending' AND wake.attempts = 0 AND wake.turn_user_seq IS NULL
+           WHERE wake.status = 'pending' AND wake.attempts = 0
            AND wake.idempotency_key LIKE 'subagent-return:%'
            AND child.status IN ('done','failed') AND child.session_id LIKE 'agent:main:subagent:%'
            AND child.id > $2
@@ -445,7 +419,7 @@ export function createPostgresRunStore(connectionString: string, opts?: { maxCla
     async editPendingText(runId: string, text: string, expectedText: string): Promise<boolean> {
       const { rowCount } = await q(
         `UPDATE runs SET request = (request::jsonb || jsonb_build_object('text', $2::text, 'displayText', $2::text))::text
-         WHERE id = $1 AND status = 'pending' AND attempts = 0 AND turn_user_seq IS NULL
+         WHERE id = $1 AND status = 'pending' AND attempts = 0
          AND COALESCE(request::jsonb ->> 'displayText', request::jsonb ->> 'text') = $3`,
         [runId, pgTextSafe(text), pgTextSafe(expectedText)],
       );
@@ -454,7 +428,7 @@ export function createPostgresRunStore(connectionString: string, opts?: { maxCla
 
     async withdraw(runId: string, opts): Promise<boolean> {
       const { rowCount } = await q(
-        "DELETE FROM runs WHERE id = $1 AND status = 'pending' AND (NOT $2::boolean OR (attempts = 0 AND turn_user_seq IS NULL))",
+        "DELETE FROM runs WHERE id = $1 AND status = 'pending' AND (NOT $2::boolean OR (attempts = 0))",
         [runId, Boolean(opts?.unstartedOnly)],
       );
       return (rowCount ?? 0) > 0;
@@ -523,7 +497,7 @@ export function createPostgresRunStore(connectionString: string, opts?: { maxCla
         );
         if (!fenced.rows[0]) continue;
         if (onRetired) await onRetired([run.sessionId]);
-        const r = await retire({ ...run, leaseToken: fenceToken }, reason, !tooOld);
+        const r = await retire({ ...run, leaseToken: fenceToken }, reason, !tooOld, { countsAsError: true });
         if (!r.applied) continue;
         if (r.requeued) requeued++;
         else parked++;
@@ -532,7 +506,7 @@ export function createPostgresRunStore(connectionString: string, opts?: { maxCla
           sessionId: run.sessionId,
           workerId: run.workerId,
           attempts: run.attempts,
-          errorAttempts: run.errorAttempts,
+          errorAttempts: run.errorAttempts + 1,
           outcome: r.requeued ? "requeued" : "parked",
         });
       }
