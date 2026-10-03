@@ -114,7 +114,6 @@ import {
   type SubagentMailRef,
   type ToolActivity,
   type TurnOptions,
-  userMessagesBefore,
   type WorkBlock,
   fileContentUrl,
 } from "./core-bridge";
@@ -207,6 +206,7 @@ import { decorateTextCodeBlocks } from "./text-code";
 
 import { createTranscriptViewport } from "./transcript-viewport";
 import { suggestedActivities } from "./suggested-activities";
+import { reportHandledError } from "./browser-errors.ts";
 
 installMarkdownSanitizer();
 
@@ -883,8 +883,8 @@ export function createChatSurface(
       const rawEarlier = page.earlierEntries ?? 0;
       chatState.earlierCount = currentEarlierCount(chatState.forkSession ?? {}, rawEarlier);
       chatState.transcriptAnchorSeq = rawEarlier > 0 ? (page.entries?.[0]?.seq ?? null) : null;
-    } catch {
-      void 0;
+    } catch (error) {
+      reportHandledError("web:transcript_refresh", error);
     }
     drawActiveChat(agent);
   }
@@ -908,7 +908,8 @@ export function createChatSurface(
     let active: Awaited<ReturnType<typeof activeRunForThread>>;
     try {
       active = await activeRunForThread(threadRef);
-    } catch {
+    } catch (error) {
+      reportHandledError("web:reattach_active_run", error);
       return;
     }
     if (agent !== chatState.agent || threadRef !== chatState.threadRef || agent.state.isStreaming) return;
@@ -940,7 +941,8 @@ export function createChatSurface(
     let activeRun: Awaited<ReturnType<typeof activeRunForThread>>;
     try {
       activeRun = await activeRunForThread(threadRef);
-    } catch {
+    } catch (error) {
+      reportHandledError("web:resume_active_run", error);
       return false;
     }
     if (agent === chatState.agent && threadRef === chatState.threadRef)
@@ -1404,8 +1406,8 @@ export function createChatSurface(
         scrollerNow.scrollTop = priorTop + (scrollerNow.scrollHeight - priorHeight);
         scrollerNow.style.scrollBehavior = prev;
       });
-    } catch {
-      void 0;
+    } catch (error) {
+      reportHandledError("web:load_earlier", error);
     } finally {
       if (agent === chatState.agent && sessionId === chatState.sessionId && chatState.loadingEarlier) {
         chatState.loadingEarlier = false;
@@ -1992,20 +1994,13 @@ export function createChatSurface(
     const sessionId = chatState.sessionId;
     const sourceThreadRef = chatState.threadRef;
     if (!agent || !sessionId) return;
-    const messages = agent.state.messages as Array<{ role?: string }>;
-    const target = messages[index];
-    if (!target) return;
-    const isUser = target.role === "user" || target.role === "user-with-attachments";
-    let userOrdinal = 0;
-    for (let i = 0; i <= index; i++) {
-      const role = messages[i]?.role;
-      if (role === "user" || role === "user-with-attachments") userOrdinal++;
-    }
+    const messages = agent.state.messages;
+    if (!messages[index]) return;
+    const floorSeq = Math.max(chatState.forkSession?.forkBoundarySeq ?? -1, (chatState.transcriptAnchorSeq ?? 0) - 1);
     try {
       const { entries } = await api<{ entries: SessionEntry[] }>(`/api/sessions/${encodeURIComponent(sessionId)}`);
-      const anchor = chatState.transcriptAnchorSeq;
-      if (anchor !== null) userOrdinal += userMessagesBefore(entries ?? [], anchor);
-      const upToSeq = forkCutSeq(entries ?? [], userOrdinal, isUser);
+      const upToSeq = forkCutSeq(entries ?? [], messages, index, floorSeq);
+      if (upToSeq === undefined) throw new Error("That message is still saving. Try forking again in a moment.");
       const forked = await forkSession(sessionId, upToSeq);
       const split = inheritedTranscript(forked.session, forked.entries ?? []);
       ctx.composer.carryModelPick(sourceThreadRef, forked.session.threadRef);

@@ -24,9 +24,6 @@ function fakeToolContext(sink?: { lastExecOpts?: Parameters<ToolContext["execute
       };
     },
     async restartComputer() {},
-    async migrateComputer(): Promise<{ from: string; to: string }> {
-      throw new Error("computer migration is not available on this deployment");
-    },
     async computerStatus() {
       return { machine: "healthy", guestResponsive: true };
     },
@@ -3975,7 +3972,7 @@ test("command exit codes are data; timeouts and thrown tool errors are failures"
         await assert.rejects(run, /sandbox provider unavailable/);
         const result = entries.find((e) => e.type === "tool_result")!.payload;
         assert.equal(result.isError, true);
-        assert.equal(result.result, "Command execution failed.");
+        assert.equal(result.result, "Command execution failed: sandbox provider unavailable");
         assert.equal(result.code, undefined);
         continue;
       }
