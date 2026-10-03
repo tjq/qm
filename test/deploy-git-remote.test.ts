@@ -1,3 +1,4 @@
+import { createMemoryDurableByteStore } from "../src/files/durable-byte-store.ts";
 import { execFile } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import type { Server } from "node:http";
@@ -25,15 +26,15 @@ async function fixture(): Promise<{
 }> {
   const deployments = createMemoryMap<Deployment>();
   const archiveStore = createMemoryMap<DeployGitArchive>();
+  const archiveBytes = createMemoryDurableByteStore();
   const writerStore = createDeployStore({
     deployments,
-    git: { repoRoot: mkdtempSync(join(tmpdir(), "deploy-git-remote-writer-")), archiveStore },
+    git: { repoRoot: mkdtempSync(join(tmpdir(), "deploy-git-remote-writer-")), archiveStore, archiveBytes },
   });
   const deployment = await writerStore.create({
     ownerScopeId: scopeId("personal", "U1"),
     createdBy: "U1",
     entrypoint: "node server.js",
-    snapshotDir: "/unused",
     files: [
       { path: "server.js", data: "console.log('hello')" },
       { path: "data.json", data: '{"n":1}' },
@@ -43,7 +44,7 @@ async function fixture(): Promise<{
   await writerStore.setAppliedVersion(deployment.id, 1);
   const readerStore = createDeployStore({
     deployments,
-    git: { repoRoot: mkdtempSync(join(tmpdir(), "deploy-git-remote-reader-")), archiveStore },
+    git: { repoRoot: mkdtempSync(join(tmpdir(), "deploy-git-remote-reader-")), archiveStore, archiveBytes },
   });
   const app = {
     listDeployments: async () => [deployment],

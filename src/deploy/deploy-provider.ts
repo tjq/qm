@@ -15,9 +15,11 @@ export interface DeployReconcileInput {
   allPaths: string[];
 }
 
+export type MaterializedDeploymentVersion = DeploymentVersion & { snapshotDir: string };
+
 export interface DeployProvider {
   readonly profile: DeployProfile;
-  apply(d: Deployment, version: DeploymentVersion): Promise<DeployEndpoint>;
+  apply(d: Deployment, version: MaterializedDeploymentVersion): Promise<DeployEndpoint>;
   reconcile?(d: Deployment, version: DeploymentVersion, input: DeployReconcileInput): Promise<DeployEndpoint>;
   destroy(d: Deployment): Promise<void>;
   setAlwaysOn?(d: Deployment, alwaysOn: boolean): Promise<void>;
