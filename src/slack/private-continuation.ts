@@ -44,7 +44,7 @@ export async function continueInPrivate(
     client,
     { ...slackReplyArgs(channel, PRIVATE_CONTINUATION_ACK, threadTs, { threadOnly: true }) },
     `${key}:ack`,
-    { verifyFirst: true, verifyOldest: source.triggerTs ?? "0" },
+    { verifyFirst: true, verifyOldest: (source.origin?.kind === "human" ? source.origin.messageTs : undefined) ?? "0" },
   );
   const result = await core.submitTurn({
     actor,
@@ -74,7 +74,6 @@ export async function continueInPrivate(
       instructions:
         "Continue the employee's request from the external Slack conversation. The request and relevant channel context are already included; do not ask them to repeat it. Use the normal personal-context authorization checks. Keep all private results and approvals in this DM. There is no automatic return to the source channel.",
     },
-    liveActor: true,
     origin: { kind: "human" },
     idempotencyKey: key,
     async: true,
@@ -96,7 +95,10 @@ export async function continueInPrivate(
           client,
           { ...slackReplyArgs(dm, text, undefined, { unfurlLinks: false }) },
           `run:${dmRunId}`,
-          { verifyFirst: true, verifyOldest: source.triggerTs ?? "0" },
+          {
+            verifyFirst: true,
+            verifyOldest: (source.origin?.kind === "human" ? source.origin.messageTs : undefined) ?? "0",
+          },
         );
     } else if (outcome.status === "failed" || outcome.status === "refused") {
       await postWithVerify(
@@ -109,7 +111,10 @@ export async function continueInPrivate(
           ),
         },
         `run:${dmRunId}`,
-        { verifyFirst: true, verifyOldest: source.triggerTs ?? "0" },
+        {
+          verifyFirst: true,
+          verifyOldest: (source.origin?.kind === "human" ? source.origin.messageTs : undefined) ?? "0",
+        },
       );
     }
     await core.ackRunDelivery(dmRunId);

@@ -610,8 +610,8 @@ for (const unattendedGrants of [undefined, ["admin.sessions.read"]]) {
     for (const turn of s.turns) {
       assert.deepEqual(turn.unattendedGrants, unattendedGrants);
       assert.equal(turn.actor.externalId, loop.owner);
-      assert.equal(turn.triggered, true);
-      assert.equal(turn.triggerDestination, undefined);
+      assert.equal(turn.origin?.kind === "automation" ? true : undefined, true);
+      assert.equal(turn.origin?.kind === "automation" ? turn.origin.destination : undefined, undefined);
       assert.equal(turn.surfaceTools, undefined);
       assert.equal(turn.readOnly, undefined);
     }
@@ -646,7 +646,10 @@ for (const runAs of ["scopeShared", "scopeFloor"] as const) {
     assert.equal(s.turns.length, 3);
     for (const turn of s.turns) {
       assert.equal(turn.unattendedGrants, undefined);
-      assert.equal(turn.ownerKeychainUnion, runAs === "scopeShared" ? true : undefined);
+      assert.equal(
+        turn.origin?.kind === "automation" ? turn.origin.useOwnerKeychain : undefined,
+        runAs === "scopeShared" ? true : undefined,
+      );
       assert.equal(turn.conversation.kind, "channel");
     }
   });

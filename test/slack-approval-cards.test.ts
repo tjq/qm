@@ -157,7 +157,7 @@ test("recoveredApprovalContext rebuilds a button context from core's durable rec
       conversation: { kind: "channel", threadRef: "ch:C1:t1", channelRef: "C1", audience: [{ externalId: "U1" }] },
       deliveryTarget: "C1:t1",
       text: "!run git push --force origin main",
-      unprompted: true,
+      origin: { kind: "ambient" },
     },
   };
   const ctx = recoveredApprovalContext(stored, { channel: "D9" });

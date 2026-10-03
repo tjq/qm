@@ -93,8 +93,8 @@ function steererRequest(externalId: string, threadRef: string, text: string, dis
     surface: "web",
     actor: { externalId, ...(displayName ? { displayName } : {}) },
     conversation: { kind: "dm", threadRef },
-    liveActor: true,
     text,
+    origin: { kind: "human" },
   };
 }
 
@@ -134,9 +134,14 @@ test("core route: a malformed request is rejected 400, and privileged fields are
   const bad = await coreSignal(run.id, { kind: "steer", text: "x", request: { text: "x" } });
   assert.equal(bad.status, 400);
 
+  const legacy = await coreSignal(run.id, {
+    kind: "steer",
+    text: "x",
+    request: { ...steererRequest("internal:U1", "t-sanitize", "x"), triggered: true },
+  });
+  assert.equal(legacy.status, 400);
   const smuggled = {
     ...steererRequest("internal:U1", "t-sanitize", "x"),
-    ownerKeychainUnion: true,
     spawned: true,
     unattendedGrants: ["admin-read"],
   };
@@ -259,8 +264,8 @@ test("an orphaned steer whose own request is refused falls back to replaying on 
       surface: "web",
       actor: { externalId: "web-eve" },
       conversation: { kind: "group", threadRef: `web:web-eve:${crypto.randomUUID()}`, channelRef: "G-NOPE" },
-      liveActor: true,
       text: "still matters",
+      origin: { kind: "human" },
     },
   });
   const claimed = await built.runs.claimById(run.id, "test-worker", 5_000);

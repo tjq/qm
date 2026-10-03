@@ -72,21 +72,7 @@ import type { SurfaceCache } from "../../surface-cache/types.ts";
 
 export interface OrchestratorInput extends Omit<
   TurnRequest,
-  | "surface"
-  | "actor"
-  | "conversation"
-  | "idempotencyKey"
-  | "spawned"
-  | "async"
-  | "triggerTs"
-  | "entryTs"
-  | "triggered"
-  | "securityScreenData"
-  | "triggerDestination"
-  | "ownerKeychainUnion"
-  | "ownerResourcesRequireOpen"
-  | "unprompted"
-  | "liveActor"
+  "surface" | "actor" | "conversation" | "idempotencyKey" | "spawned" | "async"
 > {
   modelAccount?: ModelAccount;
   surface?: string;

@@ -5,7 +5,6 @@ import { conversationScope } from "../resolution/resolution-service.ts";
 import type { TurnResult } from "../types.ts";
 import type { Orchestrator } from "../core/orchestrator.ts";
 import { NonRetryableTurnError, turnFailureMessage } from "../core/turn-error.ts";
-import { resolveTurnOrigin } from "../core/turn-origin.ts";
 import { errorParks, type Run, type RunStore } from "./run-store.ts";
 import { errMessage, errorAlreadyReported, swallow } from "../util/errors.ts";
 import { sleep } from "../util/async.ts";
@@ -77,7 +76,7 @@ export async function processRun(
     const queueMs = run.startedAt !== null ? Math.max(0, run.startedAt - run.createdAt) : undefined;
     const result = await deps.orchestrator.handleTurn({
       ...run.request,
-      origin: resolveTurnOrigin(run.request),
+      origin: run.request.origin,
       runId: run.id,
       attempt: run.attempts,
       runLeaseToken: token,

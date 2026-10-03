@@ -662,8 +662,8 @@ test("inbox runtime overrides use the web model allowlist without changing defau
       text: "Make it shorter",
       model: "claude-haiku-4-5",
       harness: "mock",
-      triggered: true,
       async: true,
+      origin: { kind: "automation" },
     });
     assert.equal(rejected.status, "refused");
     assert.match(rejected.reason ?? "", /runtime is no longer available/);

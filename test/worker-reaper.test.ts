@@ -769,9 +769,9 @@ test("web admission and replay preserve analytics exclusions", async (t) => {
           actor: { externalId: "U1" },
           conversation: { kind: "dm", threadRef: `excluded-${flag}-${status}` },
           text: "test message",
-          liveActor: true,
           async: true,
           [flag]: true,
+          origin: { kind: "human" },
         });
         assert.ok(admitted.runId);
         const run = (await built.runs.claimById(admitted.runId, "worker", 10_000))!;

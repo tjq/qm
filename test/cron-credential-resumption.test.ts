@@ -111,10 +111,10 @@ test("cron credential approval resumes the original fire once and delivers to th
 
   assert.equal(f.requests.length, 1);
   const request = f.requests[0]!;
-  assert.equal(request.triggered, true);
+  assert.equal(request.origin?.kind === "automation" ? true : undefined, true);
   assert.equal(request.actor.externalId, "U_ALICE");
   assert.equal(request.conversation.threadRef, f.ask.requesterThreadRef);
-  assert.deepEqual(request.triggerDestination, destination);
+  assert.deepEqual(request.origin?.kind === "automation" ? request.origin.destination : undefined, destination);
   assert.deepEqual(request.unattendedGrants, ["allowed-job-grant"]);
   assert.match(request.text, /approved access until revoked/);
   assert.ok(!request.text.includes(f.ask.id) && !request.text.includes(f.ask.purpose));
@@ -164,7 +164,7 @@ test("cron credential approval does not restore a removed delivery destination",
   await fireAskResolution(f.deps, f.ask);
 
   assert.equal(f.requests.length, 1);
-  assert.equal(f.requests[0]!.triggerDestination, undefined);
+  assert.equal(f.requests[0]!.origin?.kind === "automation" ? f.requests[0]!.origin.destination : undefined, undefined);
   assert.equal((await f.deliveries.pending("principal")).length, 0);
 });
 
@@ -180,7 +180,7 @@ test("cron credential approval preserves scopeShared execution and checks curren
   await fireAskResolution(f.deps, f.ask);
 
   assert.equal(f.requests.length, 1);
-  assert.equal(f.requests[0]!.ownerKeychainUnion, true);
+  assert.equal(f.requests[0]!.origin?.kind === "automation" ? f.requests[0]!.origin.useOwnerKeychain : undefined, true);
   assert.equal(f.requests[0]!.unattendedGrants, undefined);
 
   f.deps.currentScopeMembers = async () => [{ id: "U_BOB", type: "internal" }];
@@ -228,7 +228,10 @@ test("credential resumption retains the originating cron's Open requirement and 
   let open = true;
   f.deps.isOpenScopeMember = async () => open;
   await fireAskResolution(f.deps, f.ask);
-  assert.equal(f.requests[0]?.ownerResourcesRequireOpen, true);
+  assert.equal(
+    f.requests[0]!.origin?.kind === "automation" ? f.requests[0]!.origin.ownerResourcesRequireOpen : undefined,
+    true,
+  );
   open = false;
   const out = await fireAskResolution(f.deps, { ...f.ask, id: "revoked-open-ask" });
   assert.equal(out.authzFailed, true);

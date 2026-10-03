@@ -30,16 +30,19 @@ test("unset categories preserve legacy conversation, child, and cron behavior", 
     resolveRuntimeChoice(config, ORG, SCOPE, fallback, undefined, "cron"),
     resolveRuntimeChoice(config, ORG, SCOPE, fallback, { effortLevel: "xhigh", fastMode: false }),
   );
-  assert.deepEqual(turnModelOptions({ triggered: true }), { thinkingLevel: "xhigh", fastMode: false });
+  assert.deepEqual(turnModelOptions({ origin: { kind: "automation" } }), { thinkingLevel: "xhigh", fastMode: false });
 });
 
 test("cron and loop entry points defer legacy injections until runtime resolution", () => {
   for (const surface of ["cron", "loop"]) {
-    assert.deepEqual(turnModelOptions({ triggered: true, surface }), {});
-    assert.deepEqual(turnModelOptions({ triggered: true, surface, thinkingLevel: "low", fastMode: false }), {
-      thinkingLevel: "low",
-      fastMode: false,
-    });
+    assert.deepEqual(turnModelOptions({ surface, origin: { kind: "automation" } }), {});
+    assert.deepEqual(
+      turnModelOptions({ surface, thinkingLevel: "low", fastMode: false, origin: { kind: "automation" } }),
+      {
+        thinkingLevel: "low",
+        fastMode: false,
+      },
+    );
   }
 });
 

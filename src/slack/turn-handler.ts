@@ -572,14 +572,12 @@ export function createTurnHandler(deps: {
       })(),
       text,
       gatewayContext,
-      ...(inc.unprompted
+      origin: inc.unprompted
         ? {
-            unprompted: true,
-            ...(inc.synthetic
-              ? {}
-              : { entryTs: inc.ts, ...(actor.isBot || inc.botAuthored ? {} : { liveActor: true }) }),
+            kind: "ambient",
+            ...(inc.synthetic ? {} : { entryTs: inc.ts, ...(actor.isBot || inc.botAuthored ? {} : { live: true }) }),
           }
-        : { liveActor: true, triggerTs: inc.ts }),
+        : { kind: "human", messageTs: inc.ts },
       ...(actor.isBot ? { botActor: true } : {}),
       ...(conversationHeader ? { conversationHeader } : {}),
       ...(priorTurns ? { priorTurns } : {}),

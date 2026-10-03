@@ -1069,7 +1069,6 @@ test("orchestrator vends a capability for only the requested org credential", as
     surface: "slack",
     actor,
     botActor: true,
-    liveActor: true,
     conversation: {
       kind: "channel",
       threadRef: "ch:C1:bot",
@@ -1079,6 +1078,7 @@ test("orchestrator vends a capability for only the requested org credential", as
       publishMembers: [actor],
     },
     text: `!execute ${JSON.stringify({ command: "echo bot", credentials: ["service_x-firehose"] })}`,
+    origin: { kind: "human" },
   });
   const botClaims = await verifyCapabilityToken(executionEnv()!.AGENT_CREDENTIAL_TOKEN!, TEST_CAPABILITY_SECRET);
   assert.equal(botClaims?.botActor, true);

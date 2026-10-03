@@ -6,7 +6,6 @@ import { asObject } from "./harness/codex-auth-file.ts";
 import { flushErrorReporting, startTiming } from "../plugins/chassis/src/error-reporting.ts";
 import type { TimingStatus } from "../plugins/chassis/src/timing.ts";
 import { createProductAnalytics } from "./util/product-analytics.ts";
-import { resolveTurnOrigin } from "./core/turn-origin.ts";
 import { createAdmittedWork } from "./util/admitted-work.ts";
 import { runSessionSmoke } from "./deployment/postdeploy-smoke.ts";
 import {
@@ -1572,7 +1571,7 @@ export function buildApp(
     finishTiming?.({
       status,
       endMs: run.finishedAt ?? Date.now(),
-      data: { surface: run.request.surface, origin: resolveTurnOrigin(run.request).kind },
+      data: { surface: run.request.surface, origin: run.request.origin.kind },
       measurements: { queue_wait: startedAt - run.createdAt },
     });
   });

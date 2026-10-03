@@ -48,7 +48,11 @@ describe("runTrigger: scopeShared unions the owner's keychain into the scope run
     assert.equal(out.ran, true);
     assert.equal(seen.length, 1);
     const req = seen[0]!;
-    assert.equal(req.ownerKeychainUnion, true, "the fire flags the owner∪scope keychain union");
+    assert.equal(
+      req.origin?.kind === "automation" ? req.origin.useOwnerKeychain : undefined,
+      true,
+      "the fire flags the owner∪scope keychain union",
+    );
     assert.equal(req.actor.externalId, "U-carol", "runs as the owner, not a substituted scope member");
     assert.equal(req.conversation.kind, "channel");
     assert.equal(req.conversation.audience?.length, 2);
@@ -64,7 +68,7 @@ describe("runTrigger: scopeShared unions the owner's keychain into the scope run
       fireKey: "o1",
       surface: "cron",
     });
-    assert.equal(seen[0]!.ownerKeychainUnion, undefined);
+    assert.equal(seen[0]!.origin?.kind === "automation" ? seen[0]!.origin.useOwnerKeychain : undefined, undefined);
   });
 
   it("an owner-mode task cannot read a managed group after leaving its current roster", async () => {
@@ -94,7 +98,7 @@ describe("runTrigger: scopeShared unions the owner's keychain into the scope run
       runAs: "scopeFloor",
       members,
     });
-    assert.equal(seen[0]!.ownerKeychainUnion, undefined);
+    assert.equal(seen[0]!.origin?.kind === "automation" ? seen[0]!.origin.useOwnerKeychain : undefined, undefined);
   });
 
   it("disables scopeShared when its owner left the current roster", async () => {
@@ -136,7 +140,7 @@ describe("runTrigger: scopeShared unions the owner's keychain into the scope run
     };
     assert.equal((await runTrigger(deps, spec)).ran, true);
     assert.equal(seen[0]!.actor.externalId, "U-carol");
-    assert.equal(seen[0]!.ownerKeychainUnion, true);
+    assert.equal(seen[0]!.origin?.kind === "automation" ? seen[0]!.origin.useOwnerKeychain : undefined, true);
     member = false;
     const revoked = await runTrigger(deps, { ...spec, fireKey: "public-revoked" });
     assert.equal(revoked.authzFailed, true);
@@ -164,7 +168,7 @@ describe("runTrigger: scopeShared unions the owner's keychain into the scope run
         members,
       });
       assert.equal(seen[0]!.conversation.isPrivate, isPrivate);
-      assert.equal(seen[0]!.ownerKeychainUnion, true);
+      assert.equal(seen[0]!.origin?.kind === "automation" ? seen[0]!.origin.useOwnerKeychain : undefined, true);
     }
   });
 
@@ -202,7 +206,10 @@ describe("runTrigger: scopeShared unions the owner's keychain into the scope run
         members,
       };
       assert.equal((await runTrigger(deps, spec)).ran, true);
-      assert.equal(seen[0]?.ownerResourcesRequireOpen, true);
+      assert.equal(
+        seen[0]!.origin?.kind === "automation" ? seen[0]!.origin.ownerResourcesRequireOpen : undefined,
+        true,
+      );
       open = false;
       assert.equal((await runTrigger(deps, { ...spec, fireKey: `${scope}:revoked` })).authzFailed, true);
       assert.equal(seen.length, 1);

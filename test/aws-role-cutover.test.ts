@@ -142,8 +142,7 @@ test("shared ACMECLI cutover isolates brokered STS without shrinking the existin
     actor: bob,
     conversation: { ...conversation, threadRef: "ch:C-owner-auth:ambient" },
     text: '!owner printf "%s|%s" "${NPM_TOKEN-unset}" "${AWS_ACCESS_KEY_ID-unset}"',
-    triggered: true,
-    ownerKeychainUnion: true,
+    origin: { kind: "automation", useOwnerKeychain: true },
   });
   assert.equal(ambientOwner.reply, "unset|unset");
   const owner = await built.app.turn({
@@ -151,8 +150,7 @@ test("shared ACMECLI cutover isolates brokered STS without shrinking the existin
     actor: bob,
     conversation,
     text: `!execute ${JSON.stringify({ command: `test "$NPM_TOKEN" = npm_BOB && test "$AWS_ACCESS_KEY_ID" = AKIA_BOB_GENERAL && printf 'selected|%s|%s' "$(cat ~/.config/acmecorp/auth.json)" "\${AGENT_API_TOKEN-unset}"; printf poisoned > ~/.config/acmecorp/auth.json`, credentials: [credentialHandle(npm.id), credentialHandle(aws.id)], ownerAuth: true })}`,
-    triggered: true,
-    ownerKeychainUnion: true,
+    origin: { kind: "automation", useOwnerKeychain: true },
   });
   assert.equal(owner.status, "ok", owner.reason);
   assert.equal(owner.reply, "selected|file_BOB|unset");
@@ -167,8 +165,7 @@ test("shared ACMECLI cutover isolates brokered STS without shrinking the existin
     actor: bob,
     conversation: { ...conversation, threadRef: "ch:C-owner-auth:brokered-acmecli" },
     text: `!execute ${JSON.stringify({ command: 'test -n "$AWS_ACCESS_KEY_ID" && test "$AWS_ACCESS_KEY_ID" != AKIA_BOB_GENERAL && test -z "${NPM_TOKEN-}" && test -z "${AGENT_API_TOKEN-}" && echo broker-only', credentials: ["broker_acmecli"], ownerAuth: true })}`,
-    triggered: true,
-    ownerKeychainUnion: true,
+    origin: { kind: "automation", useOwnerKeychain: true },
   });
   assert.equal(
     brokeredAcmecli.reply,
@@ -181,8 +178,7 @@ test("shared ACMECLI cutover isolates brokered STS without shrinking the existin
     actor: bob,
     conversation: { ...conversation, threadRef: "ch:C-owner-auth:unpoisoned" },
     text: "!owner cat ~/.config/acmecorp/auth.json",
-    triggered: true,
-    ownerKeychainUnion: true,
+    origin: { kind: "automation", useOwnerKeychain: true },
   });
   assert.equal(unpoisoned.reply, "file_BOB", "owner-box mutations never capture back into Bob's durable keychain");
   assert.deepEqual(await built.keychain!.grantsForScope(room), []);
@@ -200,8 +196,7 @@ test("shared ACMECLI cutover isolates brokered STS without shrinking the existin
     actor: bob,
     conversation: { ...conversation, threadRef: "ch:C-owner-auth:scoped" },
     text: '!run printf \'%s|%s|%s|%s\' "${NPM_TOKEN-unset}" "${AWS_ACCESS_KEY_ID-unset}" "$(test -e ~/.config/acmecorp/auth.json && echo found || echo absent)" "$(test -e ~/.acmecli/session.json && echo found || echo absent)"',
-    triggered: true,
-    ownerKeychainUnion: true,
+    origin: { kind: "automation", useOwnerKeychain: true },
   });
   assert.equal(scoped.status, "ok", scoped.reason);
   assert.equal(
@@ -296,8 +291,7 @@ test("shared ACMECLI cutover isolates brokered STS without shrinking the existin
       actor: bob,
       conversation: { ...conversation, threadRef: "ch:C-owner-auth:init-failure" },
       text: "!owner true",
-      triggered: true,
-      ownerKeychainUnion: true,
+      origin: { kind: "automation", useOwnerKeychain: true },
     }),
     /owner file materialization failed/,
   );
@@ -320,8 +314,7 @@ test("shared ACMECLI cutover isolates brokered STS without shrinking the existin
     actor: bob,
     conversation: { ...conversation, threadRef: "ch:C-owner-auth:destroy-retry" },
     text: "!owner true",
-    triggered: true,
-    ownerKeychainUnion: true,
+    origin: { kind: "automation", useOwnerKeychain: true },
   });
   built.sandbox.teardown = realTeardown;
   assert.equal(retriedDestroy.status, "ok", retriedDestroy.reason);
@@ -345,8 +338,7 @@ test("shared ACMECLI cutover isolates brokered STS without shrinking the existin
       actor: bob,
       conversation: { ...conversation, threadRef: "ch:C-owner-auth:destroy-failure-containment" },
       text: "!owner printf changed > ~/.config/acmecorp/auth.json",
-      triggered: true,
-      ownerKeychainUnion: true,
+      origin: { kind: "automation", useOwnerKeychain: true },
     }),
     (error: Error) => {
       assert.equal(error.message, "Disposable sandbox destruction failed");
@@ -380,8 +372,7 @@ test("shared ACMECLI cutover isolates brokered STS without shrinking the existin
       actor: bob,
       conversation: { ...conversation, threadRef: "ch:C-owner-auth:throw" },
       text: "!owner explode-owner",
-      triggered: true,
-      ownerKeychainUnion: true,
+      origin: { kind: "automation", useOwnerKeychain: true },
     }),
     /owner command exploded/,
   );
@@ -477,8 +468,7 @@ test("cutover policy retains legacy files only in prefer-ephemeral mode", async 
     actor,
     conversation: { ...conversation, threadRef: "ch:C-acmecli-fallback:owner-only" },
     text: "!owner test -e ~/.acmecli && echo found || echo absent",
-    triggered: true,
-    ownerKeychainUnion: true,
+    origin: { kind: "automation", useOwnerKeychain: true },
   });
   assert.equal(
     ownerClosed.reply,

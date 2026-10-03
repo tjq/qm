@@ -1,6 +1,6 @@
+import { turnOriginError } from "../../core/turn-origin.ts";
 import { fromJSONSchema, z, ZodObject } from "zod";
 import type { ClientToolDeclaration, TurnOrigin, TurnRequest } from "../../types.ts";
-import { resolveTurnOrigin } from "../../core/turn-origin.ts";
 import { samePerson } from "../../directory/person.ts";
 import { sendJson } from "../http.ts";
 import { isObj } from "./shared.ts";
@@ -72,26 +72,10 @@ function publicOrigin(origin: TurnOrigin | undefined): TurnOrigin | undefined {
   return safe;
 }
 
-function publicTurnOrigin(body: TurnRequest): { origin?: TurnOrigin; error?: string } {
-  const typed = publicOrigin(body.origin);
-  if (
-    typed?.kind === "automation" &&
-    body.triggered === true &&
-    typed.screenData !== undefined &&
-    body.securityScreenData !== undefined &&
-    typed.screenData !== body.securityScreenData
-  ) {
-    return { error: "conflicting typed and legacy automation screen data" };
-  }
-  return { origin: resolveTurnOrigin({ ...body, ...(typed ? { origin: typed } : { origin: undefined }) }) };
-}
-
 function sanitizedTurnRequest(body: TurnRequest): { request: TurnRequest } | { error: string } {
   const {
     slackSource: _slackSource,
     externalSlack: _externalSlack,
-    ownerKeychainUnion: _ownerKeychainUnion,
-    ownerResourcesRequireOpen: _ownerResourcesRequireOpen,
     spawned: _spawned,
     unattendedGrants: _unattendedGrants,
     redeliveryKey: _redeliveryKey,
@@ -99,9 +83,9 @@ function sanitizedTurnRequest(body: TurnRequest): { request: TurnRequest } | { e
   } = body;
   if (typeof safeBody.idempotencyKey === "string" && safeBody.idempotencyKey.startsWith("slack:"))
     return { error: "idempotencyKey must not use the reserved slack: prefix" };
-  const resolvedOrigin = publicTurnOrigin(safeBody);
-  if (resolvedOrigin.error) return { error: resolvedOrigin.error };
-  const origin = resolvedOrigin.origin;
+  const originError = turnOriginError(body);
+  if (originError) return { error: originError };
+  const origin = publicOrigin(body.origin);
   const { clientTools: rawClientTools, ...rest } = safeBody;
   let clientTools: ClientToolDeclaration[] | undefined;
   if (rawClientTools !== undefined) {

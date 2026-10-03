@@ -1,4 +1,3 @@
-import { resolveTurnOrigin } from "../core/turn-origin.ts";
 import type { Run } from "../runs/run-store.ts";
 
 export function createProductAnalytics(
@@ -53,7 +52,7 @@ export function createProductAnalytics(
       capture("app_published", principal, `${deploymentId}:${version}:app_published`),
     async responseFinished(run) {
       if (
-        resolveTurnOrigin(run.request).kind !== "human" ||
+        run.request.origin.kind !== "human" ||
         run.request.botActor ||
         run.request.analyticsSuppressed ||
         run.request.proactiveOpener ||

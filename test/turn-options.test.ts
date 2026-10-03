@@ -8,14 +8,14 @@ import {
 } from "../src/core/turn-options.ts";
 
 test("triggered turns default to extra-high thinking and non-fast mode", () => {
-  assert.deepEqual(turnModelOptions({ triggered: true }), {
+  assert.deepEqual(turnModelOptions({ origin: { kind: "automation" } }), {
     thinkingLevel: NON_INTERACTIVE_THINKING_LEVEL,
     fastMode: NON_INTERACTIVE_FAST_MODE,
   });
 });
 
 test("explicit turn model options win over triggered defaults", () => {
-  assert.deepEqual(turnModelOptions({ triggered: true, thinkingLevel: "low", fastMode: true }), {
+  assert.deepEqual(turnModelOptions({ thinkingLevel: "low", fastMode: true, origin: { kind: "automation" } }), {
     thinkingLevel: "low",
     fastMode: true,
   });
@@ -35,7 +35,7 @@ test("interactive turns do not force model options", () => {
 });
 
 test("a triggered turn with an explicit low thinking level overrides the xhigh trigger default", () => {
-  assert.deepEqual(turnModelOptions({ triggered: true, thinkingLevel: "low" }), {
+  assert.deepEqual(turnModelOptions({ thinkingLevel: "low", origin: { kind: "automation" } }), {
     thinkingLevel: "low",
     fastMode: NON_INTERACTIVE_FAST_MODE,
   });

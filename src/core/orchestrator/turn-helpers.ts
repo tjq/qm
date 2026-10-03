@@ -10,7 +10,6 @@ import type {
   ActorAssertion,
 } from "../../types.ts";
 import { parseScopeId } from "../../types.ts";
-import { turnOriginRequestFields } from "../turn-origin.ts";
 import type { DirectoryStore } from "../../directory/directory-store.ts";
 import { isOverheardEntry } from "../../sessions/session-store.ts";
 import type { DeliveryStore } from "../../delivery/delivery-store.ts";
@@ -253,7 +252,7 @@ export function replayableRequest(input: OrchestratorInput): TurnRequest {
     ...(input.gatewayContext ? { gatewayContext: input.gatewayContext } : {}),
     ...(input.analyticsSuppressed ? { analyticsSuppressed: true } : {}),
     ...(input.proactiveOpener ? { proactiveOpener: true } : {}),
-    ...turnOriginRequestFields(input.origin),
+    origin: input.origin,
     ...(input.conversationHeader ? { conversationHeader: input.conversationHeader } : {}),
     ...(input.priorTurns?.length ? { priorTurns: input.priorTurns } : {}),
     ...(input.overheard?.length ? { overheard: input.overheard } : {}),

@@ -140,8 +140,7 @@ test("screenings from real turns become the replay corpus, verbatim", async () =
       actor: { externalId: "U1" },
       conversation: { kind: "dm", threadRef: `dm:U1:x${i}` },
       text: "summarize this",
-      triggered: true,
-      securityScreenData,
+      origin: { kind: "automation", screenData: securityScreenData },
     });
     outcomes.push(result.status);
   }

@@ -28,7 +28,6 @@ import type {
   PendingApprovalRecord,
 } from "../types.ts";
 import { scopeId as toScopeId, personalScope } from "../types.ts";
-import { turnOriginRequestFields } from "./turn-origin.ts";
 import { resolveTurnFastMode, turnRuntimePurpose } from "./turn-options.ts";
 import { orgId } from "../config.ts";
 import { renderGatewayContext } from "./gateway-context.ts";
@@ -457,8 +456,7 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
       const bounded = securityScreenPayload({
         surface: "external",
         text: "",
-        triggered: true,
-        securityScreenData: payload,
+        origin: { kind: "automation", screenData: payload },
       });
       const steerContext = {
         hook: "user_input",
@@ -880,7 +878,7 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
         const screenPayload = screenInbound
           ? securityScreenPayload({
               ...input,
-              ...turnOriginRequestFields(input.origin),
+              origin: input.origin,
               overheard: [],
               externalPromptData,
               verifiedSwarm: Boolean(input.swarm && swarmBinding),
@@ -3340,10 +3338,7 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
               ? Math.min(requestedTurnWallClockMs, configuredTurnWallClockMs)
               : requestedTurnWallClockMs;
         }
-        const runtimePurpose = turnRuntimePurpose(
-          { surface: input.surface, triggered: automatedTurn },
-          !!session.parentSessionId || !!swarmBinding?.member.parentId,
-        );
+        const runtimePurpose = turnRuntimePurpose(input, !!session.parentSessionId || !!swarmBinding?.member.parentId);
         const purposeDefault = runtimePurpose ? await deps.config?.getPurposeRuntimeDurable(runtimePurpose) : undefined;
         const wantsOrgFastMode =
           typeof input.fastMode !== "boolean" &&

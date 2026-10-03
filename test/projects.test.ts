@@ -584,7 +584,7 @@ test("Project routes use ordinary group sessions with the durable roster as auth
         audience: [{ externalId: "outsider" }],
       },
       text: "background project work",
-      triggered: true,
+      origin: { kind: "automation" },
     });
   assert.equal((await background()).status, "ok");
   const removableApprovalThread = "web:member:approval-to-cancel";
@@ -814,7 +814,6 @@ test("Auto quarantine honors the current Project roster epoch", async () => {
         audience: [],
       },
       text: `!security-risk ${marker}`,
-      unprompted: true,
       ...(overheard
         ? {
             overheard: [
@@ -822,6 +821,7 @@ test("Auto quarantine honors the current Project roster epoch", async () => {
             ],
           }
         : {}),
+      origin: { kind: "ambient" },
     });
 
   const quarantined = await request("initial-marker", true);
@@ -837,8 +837,8 @@ test("Auto quarantine honors the current Project roster epoch", async () => {
       audience: [],
     },
     text: "!security-risk initial-marker",
-    unprompted: true,
     approval: { requestId: quarantined.pendingApprovals![0]!.requestId, approved: false },
+    origin: { kind: "ambient" },
   });
   assert.equal(denied.status, "refused");
   const session = await built.sessions.getByThread(threadRef);

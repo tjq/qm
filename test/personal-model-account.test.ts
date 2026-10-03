@@ -99,10 +99,10 @@ test("personal provider choice is durable and controls the submitted run indepen
     actor: { externalId: "U1" },
     conversation: { kind: "dm", threadRef: "personal-provider-choice" },
     text: "hello",
-    liveActor: true,
     async: true,
     model: "company-only-custom-model",
     harness: "pi",
+    origin: { kind: "human" },
   });
   const run = await built.runs.get(submitted.runId!);
   assert.equal(run?.request.modelAccount, "openai");
@@ -123,7 +123,7 @@ test("shared chat messages queue instead of borrowing another person's account",
     actor: { externalId: user },
     conversation: { kind: "channel" as const, threadRef: "account-steering", channelRef: "C1" },
     text: "hello",
-    liveActor: true,
+    origin: { kind: "human" as const },
     async: true,
   });
   await built.config.setPersonalModelAuth("U1", true, "anthropic");

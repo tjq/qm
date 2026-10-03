@@ -80,7 +80,7 @@ async function fixture(scope: ScopeId = "channel:C_SHARED") {
     requesterId: requests[0]!.actor.externalId,
     requesterScopeId: scope,
     requesterThreadRef: requests[0]!.conversation.threadRef,
-    requesterDestination: requests[0]!.triggerDestination,
+    requesterDestination: requests[0]!.origin?.kind === "automation" ? requests[0]!.origin.destination : undefined,
     triggered: true,
     purpose: cron.action!,
   });
@@ -105,14 +105,17 @@ for (const scope of ["channel:C_SHARED", "group:G_SHARED", "group:web-project-sh
     assert.equal(f.requests.length, 1);
     const request = f.requests[0]!;
     assert.equal(request.actor.externalId, "U_REQUESTER");
-    assert.equal(request.triggered, true);
+    assert.equal(request.origin?.kind === "automation" ? true : undefined, true);
     assert.equal(request.conversation.threadRef, f.ask.requesterThreadRef);
     assert.equal(request.conversation.kind, scope.startsWith("channel:") ? "channel" : "group");
     assert.equal(request.conversation.channelRef, scope.slice(scope.indexOf(":") + 1));
     assert.deepEqual(request.conversation.audience, [{ externalId: "U_REQUESTER" }]);
     assert.equal(request.unattendedGrants, undefined);
-    assert.equal(request.ownerKeychainUnion, undefined);
-    assert.deepEqual(request.triggerDestination, f.cron.destination);
+    assert.equal(request.origin?.kind === "automation" ? request.origin.useOwnerKeychain : undefined, undefined);
+    assert.deepEqual(
+      request.origin?.kind === "automation" ? request.origin.destination : undefined,
+      f.cron.destination,
+    );
     assert.match(request.text, /approved access for one credential use/);
     assert.ok(!request.text.includes(f.ask.id) && !request.text.includes(f.ask.purpose));
     assert.equal(f.grant.audienceScopeId, scope);

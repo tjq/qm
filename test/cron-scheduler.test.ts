@@ -36,7 +36,12 @@ function harness(
   const run = async (req: TurnRequest): Promise<TurnResult> => {
     calls.push(req);
     if (typeof reply === "function") return reply(req);
-    if (req.triggered && req.surface && isPollSurface(req.surface) && isSilentPollReply(reply)) {
+    if (
+      (req.origin?.kind === "automation" ? true : undefined) &&
+      req.surface &&
+      isPollSurface(req.surface) &&
+      isSilentPollReply(reply)
+    ) {
       return { status: "silent" };
     }
     return { status: "ok", reply };
@@ -287,7 +292,7 @@ test("a personal cron with a principal destination delivers its real output to t
   });
   await runNowSettled(scheduler, cron.id);
   assert.equal(calls[0]?.conversation.kind, "dm");
-  assert.deepEqual(calls[0]?.triggerDestination, {
+  assert.deepEqual(calls[0]!.origin?.kind === "automation" ? calls[0]!.origin.destination : undefined, {
     type: "principal",
     target: "U-alice",
     audienceScopeId: scopeId("personal", "U-alice"),
@@ -1926,7 +1931,7 @@ test("scheduler rechecks durable Open authorization on each marked shared fire",
     schedule: { everyMs: 60_000 },
   });
   await runNowSettled(scheduler, cron.id);
-  assert.equal(calls[0]?.ownerResourcesRequireOpen, true);
+  assert.equal(calls[0]!.origin?.kind === "automation" ? calls[0]!.origin.ownerResourcesRequireOpen : undefined, true);
   open = false;
   await runNowSettled(scheduler, cron.id);
   assert.equal(calls.length, 1);

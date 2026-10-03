@@ -7,7 +7,6 @@ import { pgTextSafe } from "../util/text.ts";
 import { isObj } from "../util/objects.ts";
 import type { TurnResult } from "../types.ts";
 import type { OrchestratorInput } from "../core/orchestrator.ts";
-import { resolveTurnOrigin } from "../core/turn-origin.ts";
 import type { EnqueueInput, EnqueueResult, ReapEvent, Run, RunDeliveryState, RunStore } from "./run-store.ts";
 import { isTerminal, releasesDedupKey } from "./run-store.ts";
 import { errMessage, swallow } from "../util/errors.ts";
@@ -25,11 +24,12 @@ function isUniqueViolation(err: unknown): boolean {
 
 function rowToRun(r: Record<string, unknown>): Run {
   const request = JSON.parse(r.request as string) as OrchestratorInput;
+  if (!request.origin) throw new Error(`Run ${r.id} lacks origin; run scripts/one-off/turn-origin.ts --apply`);
   return {
     id: r.id as string,
     sessionId: r.session_id as string,
     status: r.status as Run["status"],
-    request: { ...request, origin: resolveTurnOrigin(request) },
+    request,
     result: r.result != null ? (JSON.parse(r.result as string) as TurnResult) : null,
     deliveryState: r.delivery_state != null ? (JSON.parse(r.delivery_state as string) as RunDeliveryState) : null,
     turnUserSeq: r.turn_user_seq != null ? Number(r.turn_user_seq) : null,
