@@ -1,6 +1,6 @@
 ---
 name: outreach-writing
-description: Write cold outreach, sales and partnership follow-ups, intro requests and DMs that a busy stranger would actually answer. Find the reason they'd care before drafting, keep it short, and when the user says a draft sounds AI-written, too long, too pitchy or not compelling, fix what the message says rather than only its tone. Use for any email or DM that asks someone for their time, including polishing the user's own draft of one.
+description: Write cold outreach, sales and partnership follow-ups, intro requests and DMs that a busy stranger would actually answer. Find the reason they'd care before drafting, keep it short, and when the user says a draft sounds AI-written, too long, too pitchy or not compelling, fix what the message says rather than only its tone. Use for any email or DM that asks someone for their time, including polishing the user's own draft of one; not replies to inbound questions or internal mail.
 ---
 
 # Outreach writing
@@ -114,7 +114,7 @@ Fix the draft until every check passes:
 4. **One ask.**
 5. **Truth.** Every number, customer, date and availability claim comes from the user or their
    records.
-6. **Tells.** Nothing from the section 4 list.
+6. **Tells.** Nothing you added from the section 4 list.
 
 Show one draft per recipient as plain text (with To and Subject for email), followed by a
 single line: why they would reply, and the word count. For a batch, agree on one draft with
