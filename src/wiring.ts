@@ -1628,14 +1628,15 @@ export function buildApp(
     git: {
       repoRoot: config.deployGitDir,
       archiveStore: artifactMap<DeployGitArchive>("deploy_git_repos"),
-      archiveBytes:
-        config.snapshotStore === "s3" && config.s3Bucket
-          ? createS3DurableByteStore({
+      ...(config.snapshotStore === "s3" && config.s3Bucket
+        ? {
+            archiveBytes: createS3DurableByteStore({
               bucket: config.s3Bucket,
               ...(config.s3Region ? { region: config.s3Region } : {}),
               prefix: `${config.s3Prefix ?? ""}deploy-git/`,
-            })
-          : createLocalDurableByteStore(join(config.dataDir, "deploy-git")),
+            }),
+          }
+        : {}),
     },
   });
   const buildAwsDeploy = (): DeployProvider =>

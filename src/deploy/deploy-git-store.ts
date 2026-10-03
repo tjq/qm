@@ -7,6 +7,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { DurableMap } from "../persistence/durable-map.ts";
 import type { DurableByteStore } from "../files/durable-byte-store.ts";
 import { collectBytes } from "../util/bytes.ts";
+import { swallowAs } from "../util/errors.ts";
 import { normalizeRelPath } from "./deploy-fs.ts";
 
 export interface DeployGitInputFile {
@@ -48,7 +49,8 @@ export interface DeployGitStore {
 
 export interface DeployGitArchive {
   deploymentId: string;
-  blobKey: string;
+  bundleB64?: string;
+  blobKey?: string;
   etag: string;
   updatedAt: number;
 }
@@ -75,7 +77,6 @@ export function createDeployGitStore(opts: DeployGitStoreOptions = {}): DeployGi
   const gitBin = opts.gitBin ?? "git";
   const archiveStore = opts.archiveStore;
   const archiveBytes = opts.archiveBytes;
-  if (archiveStore && !archiveBytes) throw new Error("deploy git archiveStore requires archiveBytes");
   const repoPath = (deploymentId: string): string => join(repoRoot, `${safeRepoName(deploymentId)}.git`);
 
   async function gitResult(args: string[], options: { cwd?: string; okExitCodes?: number[] } = {}): Promise<GitResult> {
@@ -109,6 +110,7 @@ export function createDeployGitStore(opts: DeployGitStoreOptions = {}): DeployGi
       const blob = await archiveBytes.open(archive.blobKey);
       if (blob) return (await collectBytes(blob.stream)).data;
     }
+    if (archive.bundleB64 != null) return Buffer.from(archive.bundleB64, "base64");
     throw new Error(
       `deploy git archive for ${archive.deploymentId} has no readable bundle (blobKey=${archive.blobKey ?? "none"})`,
     );
@@ -135,8 +137,17 @@ export function createDeployGitStore(opts: DeployGitStoreOptions = {}): DeployGi
 
   async function storeArchive(deploymentId: string, data: Buffer, etag: string): Promise<void> {
     if (!archiveStore) return;
-    const { blobKey } = await archiveBytes!.put(data);
-    await archiveStore.put(deploymentId, { deploymentId, blobKey, etag, updatedAt: Date.now() });
+    if (archiveBytes) {
+      const { blobKey } = await archiveBytes.put(data);
+      await archiveStore.put(deploymentId, { deploymentId, blobKey, etag, updatedAt: Date.now() });
+    } else {
+      await archiveStore.put(deploymentId, {
+        deploymentId,
+        bundleB64: data.toString("base64"),
+        etag,
+        updatedAt: Date.now(),
+      });
+    }
   }
 
   async function persistArchive(deploymentId: string, repo: string): Promise<void> {
@@ -159,10 +170,25 @@ export function createDeployGitStore(opts: DeployGitStoreOptions = {}): DeployGi
     }
   }
 
+  async function migrateArchive(archive: DeployGitArchive): Promise<void> {
+    if (!archiveStore?.update || !archiveBytes || archive.bundleB64 == null) return;
+    const { blobKey } = await archiveBytes.put(Buffer.from(archive.bundleB64, "base64"));
+    const slim: DeployGitArchive = {
+      deploymentId: archive.deploymentId,
+      blobKey,
+      etag: archive.etag,
+      updatedAt: archive.updatedAt,
+    };
+    await archiveStore.update(archive.deploymentId, (cur) =>
+      cur.bundleB64 != null && cur.etag === archive.etag ? slim : cur,
+    );
+  }
+
   async function ensureRepo(deploymentId: string): Promise<string> {
     const repo = repoPath(deploymentId);
     const archive = archiveStore ? await archiveStore.get(deploymentId) : null;
     if (archive) {
+      await migrateArchive(archive).catch(swallowAs("deploy-git: archive blob migration", undefined));
       const hasRepo = existsSync(join(repo, "HEAD"));
       if (!hasRepo || (await localArchiveEtag(repo)) !== archive.etag) return restoreArchive(deploymentId, archive);
       return repo;

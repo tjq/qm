@@ -54,6 +54,7 @@ test("addVersionFromCommit registers a pushed commit as a new version inheriting
     ownerScopeId: scopeId("personal", "U1"),
     createdBy: "U1",
     entrypoint: "node server.js",
+
     env: { FOO: "bar" },
     files: [{ path: "server.js", data: "1" }],
   });
@@ -234,6 +235,7 @@ test("deploy versions carry git commits for app files and rollback moves the cur
     ownerScopeId: scopeId("personal", "U1"),
     createdBy: "U1",
     entrypoint: "node server.js",
+
     files: [
       { path: "server.js", data: "console.log('v1')" },
       { path: "data.json", data: '{"n":1}' },
@@ -244,6 +246,7 @@ test("deploy versions carry git commits for app files and rollback moves the cur
 
   await s1.addVersion(d.id, {
     entrypoint: "node server.js",
+
     files: [
       { path: "server.js", data: "console.log('v1')" },
       { path: "data.json", data: '{"n":2}' },
@@ -419,26 +422,27 @@ test("uploaded files a .gitignore would exclude still reach the deployment's git
 test("deploy git repos restore from the durable archive into a fresh repo root", async () => {
   const deployments = createMemoryMap<Deployment>();
   const archiveStore = createMemoryMap<DeployGitArchive>();
-  const archiveBytes = createMemoryDurableByteStore();
   const s1 = createDeployStore({
     deployments,
-    git: { repoRoot: mkdtempSync(join(tmpdir(), "deploy-git-a-")), archiveStore, archiveBytes },
+    git: { repoRoot: mkdtempSync(join(tmpdir(), "deploy-git-a-")), archiveStore },
   });
   const d = await s1.create({
     ownerScopeId: scopeId("personal", "U1"),
     createdBy: "U1",
     entrypoint: "node server.js",
+
     files: [{ path: "server.js", data: "console.log('v1')" }],
   });
   const v1 = (await s1.versionOf(d.id, 1))!;
   await s1.addVersion(d.id, {
     entrypoint: "node server.js",
+
     files: [{ path: "server.js", data: "console.log('v2')" }],
   });
 
   const s2 = createDeployStore({
     deployments,
-    git: { repoRoot: mkdtempSync(join(tmpdir(), "deploy-git-b-")), archiveStore, archiveBytes },
+    git: { repoRoot: mkdtempSync(join(tmpdir(), "deploy-git-b-")), archiveStore },
   });
   const v2 = (await s2.versionOf(d.id, 2))!;
   await s2.setAppliedVersion(d.id, 2);
@@ -457,7 +461,7 @@ test("deploy git repos restore from the durable archive into a fresh repo root",
   await s2.setAppliedVersion(d.id, 1);
   const s3 = createDeployStore({
     deployments,
-    git: { repoRoot: mkdtempSync(join(tmpdir(), "deploy-git-c-")), archiveStore, archiveBytes },
+    git: { repoRoot: mkdtempSync(join(tmpdir(), "deploy-git-c-")), archiveStore },
   });
   assert.equal(await s3.refOf(d.id, deployCurrentGitRef), v1.commit, "ref-only changes are also durably archived");
 });
@@ -474,11 +478,12 @@ test("deploy git archives keep bundle bytes in the byte store, not the row", asy
     ownerScopeId: scopeId("personal", "U1"),
     createdBy: "U1",
     entrypoint: "node server.js",
+
     files: [{ path: "server.js", data: "console.log('v1')" }],
   });
 
   const row = (await archiveStore.get(d.id))!;
-  assert.equal("bundleB64" in row, false, "the row carries no bundle bytes");
+  assert.equal(row.bundleB64, undefined, "the row carries no bundle bytes");
   assert.ok(row.blobKey, "the row references the bundle blob");
   const firstBlobKey = row.blobKey!;
 
@@ -493,6 +498,7 @@ test("deploy git archives keep bundle bytes in the byte store, not the row", asy
 
   await s2.addVersion(d.id, {
     entrypoint: "node server.js",
+
     files: [{ path: "server.js", data: "console.log('v2')" }],
   });
   const row2 = (await archiveStore.get(d.id))!;
@@ -501,6 +507,39 @@ test("deploy git archives keep bundle bytes in the byte store, not the row", asy
     await archiveBytes.open(firstBlobKey),
     "superseded blobs are kept — content-addressed keys can be shared across deployments",
   );
+});
+
+test("legacy inline-bundle rows still restore and migrate to blob refs on read", async () => {
+  const deployments = createMemoryMap<Deployment>();
+  const archiveStore = createMemoryMap<DeployGitArchive>();
+  const s1 = createDeployStore({
+    deployments,
+    git: { repoRoot: mkdtempSync(join(tmpdir(), "deploy-git-legacy-a-")), archiveStore },
+  });
+  const d = await s1.create({
+    ownerScopeId: scopeId("personal", "U1"),
+    createdBy: "U1",
+    entrypoint: "node server.js",
+
+    files: [{ path: "server.js", data: "console.log('v1')" }],
+  });
+  const legacy = (await archiveStore.get(d.id))!;
+  assert.ok(legacy.bundleB64, "without a byte store the bundle is stored inline (legacy format)");
+
+  const archiveBytes = createMemoryDurableByteStore();
+  const s2 = createDeployStore({
+    deployments,
+    git: { repoRoot: mkdtempSync(join(tmpdir(), "deploy-git-legacy-b-")), archiveStore, archiveBytes },
+  });
+  assert.deepEqual(
+    (await s2.filesOf(d.id, 1))?.map((f) => [f.path, Buffer.from(f.data).toString("utf8")]),
+    [["server.js", "console.log('v1')"]],
+  );
+  const migrated = (await archiveStore.get(d.id))!;
+  assert.equal(migrated.bundleB64, undefined, "reading a legacy row rewrites it without inline bytes");
+  assert.ok(migrated.blobKey, "the migrated row references the offloaded blob");
+  assert.equal(migrated.etag, legacy.etag, "migration preserves the archive etag");
+  assert.ok(await archiveBytes.open(migrated.blobKey!), "the offloaded blob is readable");
 });
 
 test("publicUrlOf strips a stale access token from any query position, and leaves clean URLs alone", () => {
