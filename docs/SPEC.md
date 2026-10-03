@@ -32,6 +32,8 @@ Read this before you change QM. It describes the target.
 
 **Deploy and release.** The CLI runs blue/green releases; Terraform provisions. Downstream deployments pin a qm release, and merged is not live until the running release contains it.
 
+**Error preservation.** Never discard error information. Preserve the original failure, its cause chain and any subsequent cleanup failures in access-controlled diagnostics, with enough context to trace the failed operation. A concise user-facing message must not replace the underlying evidence. Redact credentials and sensitive payloads; redaction is not a reason to erase the failure.
+
 ## One of each
 
 Extend these; don't add a sibling. Where several exist, converge on the first named.
@@ -47,6 +49,10 @@ Extend these; don't add a sibling. Where several exist, converge on the first na
 ## Wall of shame
 
 Patterns from this repo's history, with the PRs that introduced or removed them. Status is as of main 6996960f.
+
+### Discarded error evidence (1 example)
+
+- **Sandbox startup and cleanup** (2026-10-02): A provider authentication failure was obscured by generic initialization/cleanup errors, then recorded in the tool transcript as “Command execution failed.” The cleanup wrappers did not preserve the original causes, and destruction retries discarded every caught exception. **Rule:** never replace diagnostic evidence with a generic status; preserve both the primary failure and subsequent failures, with secret-safe details and correlation to the operation. *Status:* confirmed on [qm main 5dbebac](https://github.com/yc-software/qm/blob/5dbebac68f671cf456ebd42061ff9578fa4fe138/src/sandbox/sandbox.ts#L17-L40), [destruction path](https://github.com/yc-software/qm/blob/5dbebac68f671cf456ebd42061ff9578fa4fe138/src/core/orchestrator/sandboxes.ts#L162-L173) and [transcript path](https://github.com/yc-software/qm/blob/5dbebac68f671cf456ebd42061ff9578fa4fe138/src/harness/agent-tools.ts#L727-L748); unresolved, no fixing PR yet.
 
 ### Overengineering (23 examples)
 
