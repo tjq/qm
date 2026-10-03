@@ -30,7 +30,7 @@ function channelTurn(text: string, extra: Partial<TurnRequest> = {}): TurnReques
   };
 }
 
-test("a retried turn does not re-post: the same position dedups against the delivered row", async () => {
+test("an uncertain post is not repeated even when an outbox receipt exists", async () => {
   const built = freshApp();
   const req = channelTurn("!post-lost-result deploy is done", { idempotencyKey: "dedup-retry-1" });
 
@@ -38,8 +38,7 @@ test("a retried turn does not re-post: the same position dedups against the deli
   const afterFirst = await built.deliveries.pending("slack");
   assert.equal(afterFirst.length, 1, "the interrupted attempt already enqueued its post");
 
-  const res = await built.app.turn(req);
-  assert.equal(res.status, "silent", res.reason);
+  await assert.rejects(built.app.turn(req), /previous worker stopped before recording the outcome of slack/);
 
   const rows = (await built.deliveries.pending("slack")).filter((d) => d.idempotencyKey.startsWith("post:"));
   assert.equal(rows.length, 1, "the retry's re-post collapses onto the first attempt's delivery");
@@ -49,32 +48,6 @@ test("a retried turn does not re-post: the same position dedups against the deli
     /^post:.+:slack:slack:C9:t1:0$/,
     "the key is the turn's run id, the destination, and the position — nothing per-attempt",
   );
-});
-
-test("an outbox receipt cannot complete a later unsafe call reusing the post ID", async () => {
-  const built = freshApp();
-  const req = channelTurn("!post-lost-result already enqueued", { idempotencyKey: "reused-post-id" });
-  await assert.rejects(built.app.turn(req), /boom/);
-  const session = (await built.sessions.getByThread("ch:C9:t1"))!;
-  const { lease } = await built.sessions.acquireLease(session.id);
-  assert.ok(lease);
-  await built.sessions.append(lease, {
-    type: "tool_call",
-    payload: { tool: "execute", callId: "mock-lost-post", replay: "unsafe" },
-    scopeLabel: session.scopeId,
-  });
-  await built.sessions.releaseLease(lease);
-  await assert.rejects(built.app.turn(req), /previous worker stopped before recording the outcome of execute/);
-});
-
-test("a missing outbox receipt never permits retrying an uncertain post", async () => {
-  const built = freshApp();
-  built.deliveries.enqueue = async () => {
-    throw new Error("outbox unavailable");
-  };
-  const req = channelTurn("!post-lost-result not enqueued", { idempotencyKey: "no-outbox-receipt" });
-  await assert.rejects(built.app.turn(req), /boom/);
-  await assert.rejects(built.app.turn(req), /previous worker stopped before recording the outcome of slack/);
 });
 
 test("a resumed turn's NEW post after a completed one is delivered, not swallowed by the dedup", async () => {

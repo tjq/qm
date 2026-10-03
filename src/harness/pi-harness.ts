@@ -2471,15 +2471,6 @@ export function createPiHarness(opts?: PiHarnessOptions): Harness {
           }
           if (tapeError) throw tapeError;
           if (handedOff) {
-            if (handoffAborted && turn.tape) {
-              const partialText = (entry.agentSession.getLastAssistantText() ?? "").trim();
-              if (partialText && !turn.handoffDeadline?.aborted)
-                await turn.tape({
-                  kind: "annotation",
-                  payload: { event: "handoff_partial", text: partialText, at: Date.now() },
-                  scopeLabel: turn.scopeLabel,
-                });
-            }
             return {
               reply: "",
               handedOff: true,

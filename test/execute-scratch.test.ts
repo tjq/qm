@@ -603,34 +603,6 @@ function turnBoxes(
   return { boxes, events, cleanups, errors };
 }
 
-test("reclaim records one cleanup audit with per-step timings and backend", async () => {
-  const { boxes, cleanups } = turnBoxes({
-    async provision(_layers, opts) {
-      return { ...(opts?.scratch ? scratchHandle : scopedHandle), backend: "e2b" };
-    },
-    async removeDir() {},
-    async listDir() {
-      return [];
-    },
-    async teardown() {},
-  });
-  await boxes.provision();
-  await boxes.provisionScratch();
-  await boxes.reclaimBox();
-  assert.equal(cleanups.length, 1);
-  const detail = JSON.parse(cleanups[0]!.detail!);
-  assert.equal(detail.runId, "run-1");
-  assert.ok(detail.totalMs >= 0);
-  const steps = new Map(
-    (detail.steps as Array<{ step: string; backend?: string; ms: number; ok: boolean }>).map((s) => [s.step, s]),
-  );
-  for (const step of ["scrub", "teardown", "scratch_destroy"]) {
-    assert.equal(steps.get(step)?.backend, "e2b", step);
-    assert.equal(steps.get(step)?.ok, true, step);
-    assert.ok(steps.get(step)!.ms >= 0, step);
-  }
-});
-
 test("scratch provisioning is singleflight within a turn and isolated across turns", async () => {
   const provisions: Parameters<Sandbox["provision"]>[] = [];
   const releases: Parameters<Sandbox["teardown"]>[] = [];
@@ -679,117 +651,20 @@ test("scratch provisioning is singleflight within a turn and isolated across tur
   assert.ok(!JSON.stringify(first.events).includes("scope-capability"));
 });
 
-test("reclaim removes every credential before any teardown and tears boxes down in parallel", async () => {
-  const log: string[] = [];
-  const gate = Promise.withResolvers<void>();
-  const { boxes } = turnBoxes({
-    async provision(layers, opts) {
-      if (opts?.scratch) return { ...scratchHandle, backend: "e2b" };
-      return {
-        ...scopedHandle,
-        id: layers.some((layer) => layer.scopeId === scopeId("channel", "C2")) ? "reach-box" : "scoped-box",
-        backend: "e2b",
-      };
-    },
-    async removeDir(handle, dir) {
-      if (dir === ".agent-turn/s/t") log.push(`scrub:${handle.id}`);
-    },
-    async listDir() {
-      return [];
-    },
-    async teardown(handle, opts) {
-      if (opts?.destroy) return void log.push(`destroy:${handle.id}`);
-      log.push(`teardown:${handle.id}`);
-      await gate.promise;
-      log.push(`paused:${handle.id}`);
-    },
-  });
-  await boxes.provision();
-  await boxes.provisionScratch();
-  await boxes.provisionForReach(scopeId("channel", "C2"));
-  const reclaim = boxes.reclaimBox();
-  while (log.filter((entry) => entry.startsWith("teardown:")).length < 2) await new Promise((r) => setImmediate(r));
-  gate.resolve();
-  await reclaim;
-  const firstTeardown = log.findIndex((entry) => entry.startsWith("teardown:"));
-  assert.ok(log.indexOf("scrub:scoped-box") >= 0 && log.indexOf("scrub:scoped-box") < firstTeardown, log.join());
-  assert.ok(log.indexOf("destroy:scratch-box") >= 0 && log.indexOf("destroy:scratch-box") < firstTeardown, log.join());
-  assert.deepEqual(log.slice(firstTeardown, firstTeardown + 2).sort(), ["teardown:reach-box", "teardown:scoped-box"]);
-});
-
-test("a provision that resolves after reclaim scrubs and releases itself without delaying reclaim", async () => {
-  const main = Promise.withResolvers<SandboxHandle>();
-  const scratch = Promise.withResolvers<SandboxHandle>();
-  const resource = Promise.withResolvers<SandboxHandle>();
-  const log: string[] = [];
-  const prepared: string[] = [];
-  const { boxes, cleanups } = turnBoxes({
-    provision: (_layers, opts) => {
-      if (opts?.scratch) return scratch.promise;
-      return opts?.sandboxId ? resource.promise : main.promise;
-    },
-    async removeDir(handle, dir) {
-      if (dir === ".agent-turn/s/t") log.push(`scrub:${handle.id}`);
-    },
-    async listDir(handle) {
-      prepared.push(handle.id);
-      return [];
-    },
-    async teardown(handle, opts) {
-      if (opts?.destroy) log.push(`destroy:${handle.id}`);
-      else log.push(`${opts?.keepWarm ? "teardown" : "paused"}:${handle.id}`);
-    },
-  });
-  const provisioned = boxes.provision();
-  const scratched = boxes.provisionScratch();
-  const resourced = boxes.provisionResource({
-    resource: { id: "res-1", ownerScopeId: scopeId("channel", "C1") },
-    crossScope: false,
-    egress: undefined,
-  } as unknown as Parameters<typeof boxes.provisionResource>[0]);
-  await boxes.reclaimBox();
-  assert.equal(log.length, 0);
-  assert.deepEqual(JSON.parse(cleanups[0]!.detail!).deferred.sort(), ["provision", "resource", "scratch"]);
-  await assert.rejects(boxes.provision(), /already been released/);
-  await assert.rejects(boxes.provisionScratch(), /already been released/);
-  main.resolve(scopedHandle);
-  scratch.resolve(scratchHandle);
-  resource.resolve({ id: "res-box", rootDir: "/workspace", resourceId: "res-1" });
-  await assert.rejects(provisioned, /already been released/);
-  await assert.rejects(resourced, /already been released/);
-  await assert.rejects(scratched, /already been released/);
-  while (log.length < 5) await new Promise((r) => setImmediate(r));
-  assert.deepEqual([...log].sort(), [
-    "destroy:scratch-box",
-    "scrub:res-box",
-    "scrub:scoped-box",
-    "teardown:res-box",
-    "teardown:scoped-box",
-  ]);
-  assert.ok(log.indexOf("scrub:scoped-box") < log.indexOf("teardown:scoped-box"));
-  assert.ok(log.indexOf("scrub:res-box") < log.indexOf("teardown:res-box"));
-  assert.deepEqual(prepared, [], "no credentials or turn files are prepared on a box that arrives after close");
-  assert.equal(boxes.box.handle, null);
-  assert.equal(boxes.scratchBox.handle, null);
-});
-
-test("a scrub still running at the handoff deadline is noted durably and cleared when it finishes", async () => {
+test("a new worker finishes a pending scrub and keeps it while the box is unreachable", async () => {
   const scrubs = createMemoryMap<PendingSandboxScrub>();
-  const removal = Promise.withResolvers<void>();
-  const torn: string[] = [];
-  const { boxes, cleanups } = turnBoxes(
+  const layers = [{ scopeId: scopeId("channel", "C1"), mode: "rw" as const, mountPath: "" }];
+  await scrubs.put("expired", { createdAt: 1, scopeLabel: "channel:C1", boxes: [{ layers, dirs: ["old"] }] });
+  const { boxes } = turnBoxes(
     {
       async provision() {
         return { ...scopedHandle, backend: "e2b", resourceId: "sbx-1" };
       },
       async removeDir(_handle, dir) {
-        if (dir === ".agent-turn/s/t") await removal.promise;
+        if (dir === ".agent-turn/s/t") await new Promise(() => {});
       },
       async listDir() {
         return [];
-      },
-      async teardown(handle, opts) {
-        torn.push(`${handle.id}:${opts?.keepWarm ? "warm" : "paused"}`);
       },
     },
     "turn-a",
@@ -797,27 +672,10 @@ test("a scrub still running at the handoff deadline is noted durably and cleared
   );
   await boxes.provision();
   await boxes.reclaimBox(AbortSignal.abort());
-  const pending = await scrubs.get("session-1:turn-a");
   assert.deepEqual(
-    pending?.boxes.map((box) => [box.sandboxId, box.dirs]),
-    [["sbx-1", [".agent-turn/s/t"]]],
+    (await scrubs.get("session-1:turn-a"))?.boxes.map((box) => box.dirs),
+    [[".agent-turn/s/t"]],
   );
-  assert.deepEqual(torn, []);
-  removal.resolve();
-  while (torn.length === 0 || (await scrubs.entries()).length) await new Promise((r) => setImmediate(r));
-  assert.deepEqual(torn, ["scoped-box:warm"]);
-  assert.equal(JSON.parse(cleanups[0]!.detail!).scrubPending, true);
-});
-
-test("a new worker finishes a pending scrub and keeps it while the box is unreachable", async () => {
-  const scrubs = createMemoryMap<PendingSandboxScrub>();
-  const layers = [{ scopeId: scopeId("channel", "C1"), mode: "rw" as const, mountPath: "" }];
-  await scrubs.put("expired", { createdAt: 1, scopeLabel: "channel:C1", boxes: [{ layers, dirs: ["old"] }] });
-  await scrubs.put("session-1:turn-a", {
-    createdAt: Date.now(),
-    scopeLabel: "channel:C1",
-    boxes: [{ layers, sandboxId: "sbx-1", dirs: [".agent-turn/s/t"] }],
-  });
   const calls: string[] = [];
   let reachable = false;
   const sandbox = {

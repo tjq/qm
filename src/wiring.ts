@@ -2032,11 +2032,7 @@ export function buildApp(
     ? (sessionId: string): string | undefined =>
         uuidId.test(sessionId) ? adminSessionUrl(recoveryAdminBase, sessionId) : undefined
     : undefined;
-  const runResultDeliveries = wireRunResultDeliveries(runs, deliveries, tasks, recoveryAdminUrlFor, sessions);
-  const runDeliverySweeper = createSweeper(() => runResultDeliveries.sweep(), 1_000, {
-    label: "run-deliveries",
-    immediate: true,
-  });
+  wireRunResultDeliveries(runs, deliveries, tasks, recoveryAdminUrlFor, sessions);
   const idempotency = createIdempotencyStore(artifactMap<IdempotencyRecord>("idempotency"));
   const skillFetcher = createGitFetcher(
     keychain
@@ -2135,7 +2131,6 @@ export function buildApp(
   const app = createApp({
     externalSlackPolicies: config.externalSlackPolicies,
     admittedWork,
-    handoff,
     ...(pgArtifactMap ? { resourceSearch: createPostgresResourceSearch(pgArtifactMap.pool) } : {}),
     swarms,
     identity,
@@ -2431,7 +2426,6 @@ export function buildApp(
     admittedWork,
     crons,
     samePerson: (a, b) => app.samePerson(a, b),
-    continuations: artifactMap("loop_fire_continuations"),
     triageEnabledFor: (owner) => featureFlags.enabled("loop_triage", scopeId("personal", owner)),
     lock: advisoryLock,
     loops: loopStore,
@@ -2476,7 +2470,6 @@ export function buildApp(
     keychain && askResolution ? createAskExpirySweep({ keychain, fire: askResolution, auditLog }) : undefined;
   let ingressMaintenance: Promise<void> | undefined;
   const scheduler = createScheduler({
-    pendingFires: artifactMap("cron_fire_continuations"),
     lock: advisoryLock,
     admittedWork,
     requireQueueStart: Boolean(config.backgroundDeploymentId),
@@ -2740,7 +2733,6 @@ export function buildApp(
       pendingScrubSweeper.start();
       sessionReturnSweeper.start();
       approvalDeliverySweeper.start();
-      runDeliverySweeper.start();
     };
     if (backgroundStopping)
       void backgroundClaimsStopping.then(startPeriodic).catch(swallowAs("wiring: periodic resume failed", undefined));
@@ -2771,7 +2763,6 @@ export function buildApp(
       pendingScrubSweeper.stop(),
       sessionReturnSweeper.stop(),
       approvalDeliverySweeper.stop(),
-      runDeliverySweeper.stop(),
       ...workers.map((worker) => worker.stopClaims()),
     ];
     backgroundClaimsStopping = Promise.all(stopping).then(() => {});
@@ -2793,8 +2784,9 @@ export function buildApp(
     setBackgroundAdmission(check) {
       backgroundAdmission = check;
     },
-    async stopBackgroundClaims(requestedAt = Date.now()) {
-      handoff.request(Math.max(0, requestedAt + config.backgroundHandoffGraceMs - Date.now()));
+    async stopBackgroundClaims(requestedAt) {
+      if (requestedAt !== undefined)
+        handoff.request(Math.max(0, requestedAt + config.backgroundHandoffGraceMs - Date.now()));
       for (const worker of workers) void worker.stopClaims();
       void stopBackground().catch(swallowAs("wiring: background drain failed", undefined));
       await Promise.all([backgroundClaimsStopping, ...workers.map((worker) => worker.stopClaims())]);

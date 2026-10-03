@@ -71,7 +71,6 @@ export interface ToolContextRef {
   }>;
   pausedOnApproval?: boolean;
   handoffRequested?: boolean;
-  handoffStopped?: boolean;
   emit?: (entry: { type: EntryType; payload: unknown; scopeLabel: ScopeId }) => void | Promise<unknown>;
   scopeLabel?: ScopeId;
   orgScopeId?: ScopeId;
@@ -1064,7 +1063,7 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
       await recordCall(callId, { tool: "skills", action: "read", name: p.name, ...(p.path ? { path: p.path } : {}) });
       const signal = ref.abortSignal;
       signal?.throwIfAborted();
-      const { content, sourceScopeId, dir, packDir, fingerprint } = await tc.skill(p.name, {
+      const { content, sourceScopeId, dir, packDir } = await tc.skill(p.name, {
         ...(p.path ? { path: p.path } : {}),
         ...(p.sandbox_id ? { sandboxId: p.sandbox_id } : {}),
         ...(signal ? { signal } : {}),
@@ -1086,7 +1085,6 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
           found: content !== null,
           ...(content !== null ? { bytes: content.length, sourceScopeId } : {}),
           ...(dir ? { dir } : {}),
-          ...(fingerprint ? { fingerprint } : {}),
           ...(p.sandbox_id ? { sandboxId: p.sandbox_id } : {}),
         },
         text(content === null ? `[no such skill file: ${p.name}/${p.path ?? "SKILL.md"}]` : `${where}${content}`),
@@ -4476,7 +4474,6 @@ function withRuntimeBarrier(tool: ToolDefinition, ref: ToolContextRef): ToolDefi
     async execute(...args) {
       ref.abortSignal?.throwIfAborted();
       if (ref.handoffRequested) {
-        ref.handoffStopped = true;
         return {
           content: [{ type: "text" as const, text: "Deployment handoff: this tool call was not executed." }],
           details: {},
@@ -4516,7 +4513,6 @@ function withRuntimeBarrier(tool: ToolDefinition, ref: ToolContextRef): ToolDefi
       const result = Promise.resolve().then(() => {
         ref.abortSignal?.throwIfAborted();
         if (ref.handoffRequested) {
-          ref.handoffStopped = true;
           return {
             content: [{ type: "text" as const, text: "Deployment handoff: this tool call was not executed." }],
             details: {},

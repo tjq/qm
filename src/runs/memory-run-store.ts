@@ -20,7 +20,6 @@ export function createMemoryRunStore(opts?: { maxClaims?: number }): MemoryRunti
   const events = new EventEmitter();
   events.setMaxListeners(0);
   const returned = new Set<string>();
-  const deliveryQueued = new Set<string>();
   const terminalListeners: Array<(run: Run) => void> = [];
 
   function sessionUnavailable(sessionId: string, now: number): boolean {
@@ -195,12 +194,6 @@ export function createMemoryRunStore(opts?: { maxClaims?: number }): MemoryRunti
     async deferReturn(runId, delayMs) {
       const run = runs.get(runId);
       if (run && isTerminal(run.status)) retryAfter.set(runId, Date.now() + Math.max(0, delayMs));
-    },
-    async pendingDeliveries(limit = 100) {
-      return [...runs.values()].filter((run) => isTerminal(run.status) && !deliveryQueued.has(run.id)).slice(0, limit);
-    },
-    async markDeliveryQueued(runId) {
-      deliveryQueued.add(runId);
     },
     onTerminal(listener) {
       terminalListeners.push(listener);

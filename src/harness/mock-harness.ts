@@ -1,4 +1,3 @@
-import { isOverheardEntry } from "../sessions/session-store.ts";
 import {
   defineHarness,
   type Harness,
@@ -97,20 +96,15 @@ export function createMockHarness(): Harness {
     },
     {
       async runTurn(turn: HarnessTurnInput): Promise<HarnessTurnResult> {
-        const continuedUserEntry = turn.continueTurn
-          ? [...turn.history].reverse().find((e) => e.type === "user" && !isOverheardEntry(e))
-          : undefined;
-        const userEntry =
-          continuedUserEntry ??
-          (await turn.emit({
-            type: "user",
-            payload: {
-              text: turn.input,
-              ...((turn.triggerTs ?? turn.entryTs) ? { ts: turn.triggerTs ?? turn.entryTs } : {}),
-              ...(turn.attachments?.length ? { attachments: turn.attachments } : {}),
-            },
-            scopeLabel: turn.scopeLabel,
-          }));
+        const userEntry = await turn.emit({
+          type: "user",
+          payload: {
+            text: turn.input,
+            ...((turn.triggerTs ?? turn.entryTs) ? { ts: turn.triggerTs ?? turn.entryTs } : {}),
+            ...(turn.attachments?.length ? { attachments: turn.attachments } : {}),
+          },
+          scopeLabel: turn.scopeLabel,
+        });
         const modelPrompt = [turn.input, turn.environment].filter((s) => s && s.trim()).join("\n\n");
 
         turn.recordModelCall({
@@ -182,14 +176,6 @@ export function createMockHarness(): Harness {
 
         if (turn.readOnly && READ_ONLY_BLOCKED_PREFIXES.some((prefix) => command0.startsWith(prefix))) {
           reply = "[strict/read-only posture: that tool is unavailable]";
-        } else if (turn.continueTurn && textPayload(continuedUserEntry?.payload).startsWith("!skill-then-boom ")) {
-          const prior = [...turn.history]
-            .reverse()
-            .find((entry) => entry.type === "tool_result" && (entry.payload as { tool?: string }).tool === "skill");
-          const dir = (prior?.payload as { dir?: string })?.dir;
-          const ran = await turn.tools.execute(`sh ${dir}/scripts/run.sh`);
-          reply = (ran.stdout || ran.stderr).trim();
-          usedTool = true;
         } else if (command0.startsWith("!skill-then-boom ")) {
           const name = command0.slice("!skill-then-boom ".length);
           await turn.emit({
@@ -896,8 +882,6 @@ export function createMockHarness(): Harness {
                 .map((m) => `${m.name ?? "you"}@${m.ts}: ${m.text}${m.files?.length ? ` [${m.files.join(",")}]` : ""}`)
                 .join("\n")
             : "overheard:none";
-        } else if (turn.continueTurn) {
-          reply = "(continued from the recorded conversation)";
         } else {
           reply = `You said: ${modelPrompt}`;
         }

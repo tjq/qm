@@ -160,43 +160,31 @@ test("a failed turn keeps renewing its session lease until sandbox cleanup finis
   assert.ok(renewedDuringCleanup > 0, "the lease was renewed while cleanup was still running");
 });
 
-for (const mutation of ["unchanged", "archived", "edited"] as const) {
-  test(`a skill load survives handoff with content validation: ${mutation}`, async () => {
-    const { app, skills, sandbox } = freshApp();
-    const skill = await publishFileSkill(skills, "handoff-helper");
-    const request = {
-      surface: "test",
-      actor,
-      conversation: { kind: "dm", threadRef: "dm:U1:skill-handoff" },
-      text: "!skill-then-boom handoff-helper",
-      idempotencyKey: "skill-handoff",
-    } as TurnRequest;
-    const writes: string[] = [];
-    const write = sandbox.writeFile.bind(sandbox);
-    sandbox.writeFile = async (handle, path, content) => {
-      if (path.endsWith("/scripts/run.sh")) writes.push(path);
-      return write(handle, path, content);
-    };
-    await assert.rejects(app.turn(request), /fault after skill load/);
-    if (mutation !== "unchanged") {
-      if (mutation === "archived") await skills.archive(skill.id);
-      else {
-        await skills.update(skill.id, {
-          ...skill.manifest,
-          files: [{ path: "scripts/run.sh", content: "printf changed" }],
-        });
-        await skills.review(skill.id, "reviewer-1", []);
-        await skills.publish(skill.id);
-      }
-      await assert.rejects(app.turn(request), /Cannot restore (unavailable|changed) skill/);
-      assert.equal(writes.length, 1);
-    } else {
-      const resumed = await app.turn(request);
-      assert.equal(resumed.reply, "handoff-helper");
-      assert.equal(writes.length, 2);
-      assert.equal(writes[0], writes[1]);
-      const session = await app.getSession(resumed.sessionId!);
-      assert.equal(session!.entries.filter((entry) => entry.type === "user").length, 1);
-    }
+test("a resumed turn re-materializes authorized skill files at their recorded paths", async () => {
+  const { app, skills, sandbox } = freshApp();
+  const skill = await publishFileSkill(skills, "handoff-helper");
+  const request = {
+    surface: "test",
+    actor,
+    conversation: { kind: "dm", threadRef: "dm:U1:skill-handoff" },
+    text: "!skill-then-boom handoff-helper",
+    idempotencyKey: "skill-handoff",
+  } as TurnRequest;
+  const writes: Array<{ path: string; content: string }> = [];
+  const write = sandbox.writeFile.bind(sandbox);
+  sandbox.writeFile = async (handle, path, content) => {
+    if (path.endsWith("/scripts/run.sh")) writes.push({ path, content: String(content) });
+    return write(handle, path, content);
+  };
+  await assert.rejects(app.turn(request), /fault after skill load/);
+  await skills.update(skill.id, {
+    ...skill.manifest,
+    files: [{ path: "scripts/run.sh", content: "printf changed" }],
   });
-}
+  await skills.review(skill.id, "reviewer-1", []);
+  await skills.publish(skill.id);
+  await app.turn(request);
+  assert.equal(writes.length, 2);
+  assert.equal(writes[0]!.path, writes[1]!.path);
+  assert.equal(writes[1]!.content, "printf changed");
+});

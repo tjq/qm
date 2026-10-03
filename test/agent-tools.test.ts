@@ -4111,47 +4111,9 @@ test("aborted turns cannot dispatch new mutating tools", async () => {
   assert.equal(mutations, 0);
 });
 
-test("handoff stops dispatch while its durable intent marker is being written", async () => {
-  for (const deadline of [false, true]) {
-    const markerStarted = Promise.withResolvers<void>();
-    const markerWritten = Promise.withResolvers<void>();
-    const abort = new AbortController();
-    let mutations = 0;
-    const emitted: Emitted[] = [];
-    const ref: ToolContextRef = {
-      abortSignal: abort.signal,
-      current: {
-        ...fakeToolContext(),
-        write: async () => {
-          mutations++;
-          return { shared: [] };
-        },
-      },
-      scopeLabel: "personal:U1",
-      emit: async (entry) => {
-        emitted.push(entry as Emitted);
-        if (entry.type === "tool_call") {
-          markerStarted.resolve();
-          await markerWritten.promise;
-        }
-      },
-    };
-    const tool = createAgentTools(ref).find((tool) => tool.name === "files");
-    const pending = call(tool, { action: "write", path: "x", data: "x" });
-    await markerStarted.promise;
-    ref.handoffRequested = true;
-    if (deadline) abort.abort();
-    markerWritten.resolve();
-    await assert.rejects(pending);
-    assert.equal(mutations, 0);
-    assert.equal(
-      emitted.some((entry) => entry.type === "tool_result" && entry.payload.notExecuted === true),
-      !deadline,
-    );
-  }
-});
-
-test("handoff skips the next tool in a batch without repeating the committed first effect", async () => {
+test("a handoff requested while the intent marker is written records the call as not executed", async () => {
+  const markerStarted = Promise.withResolvers<void>();
+  const markerWritten = Promise.withResolvers<void>();
   let mutations = 0;
   const emitted: Emitted[] = [];
   const ref: ToolContextRef = {
@@ -4165,12 +4127,21 @@ test("handoff skips the next tool in a batch without repeating the committed fir
     scopeLabel: "personal:U1",
     emit: async (entry) => {
       emitted.push(entry as Emitted);
-      if (entry.type === "tool_result") ref.handoffRequested = true;
+      if (entry.type === "tool_call") {
+        markerStarted.resolve();
+        await markerWritten.promise;
+      }
     },
   };
   const tool = createAgentTools(ref).find((tool) => tool.name === "files");
-  await call(tool, { action: "write", path: "first", data: "first" });
-  assert.match(textOut(await call(tool, { action: "write", path: "second", data: "second" })), /not executed/);
-  assert.equal(mutations, 1);
-  assert.equal(emitted.filter((entry) => entry.type === "tool_result").length, 1);
+  const pending = call(tool, { action: "write", path: "x", data: "x" });
+  await markerStarted.promise;
+  ref.handoffRequested = true;
+  markerWritten.resolve();
+  await assert.rejects(pending);
+  assert.equal(mutations, 0);
+  assert.equal(
+    emitted.some((entry) => entry.type === "tool_result" && entry.payload.notExecuted === true),
+    true,
+  );
 });

@@ -1,4 +1,3 @@
-import { TurnHandedOff } from "../core/turn-error.ts";
 import type { AdmittedWork } from "../util/admitted-work.ts";
 import type { Monitor, TurnRequest, TurnResult } from "../types.ts";
 import type { MonitorStore } from "./monitor-store.ts";
@@ -294,7 +293,6 @@ export function createMonitorPoller(deps: MonitorPollerDeps): MonitorPoller {
         try {
           if (await poll(sandbox, handle, m, t)) fires++;
         } catch (e) {
-          if (e instanceof TurnHandedOff) break;
           await deps.monitors.recordError(m.id, errMessage(e));
           console.error("%s", `[monitor] poll failed for ${m.id}:`, errMessage(e));
         }

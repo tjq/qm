@@ -283,6 +283,7 @@ export function createHarnessRouter(
         const dispatched: HarnessTurnInput = {
           ...input,
           runtime: choice,
+          continueTurn: choice.harnessId === "pi" && input.continueTurn,
           tools: input.runtimeControl
             ? { ...input.tools, runtime: (request, signal) => input.runtimeControl!(choice, request, signal) }
             : input.tools,

@@ -88,9 +88,6 @@ export interface RunStore {
   markReturned(runId: string): Promise<void>;
   deferReturn(runId: string, delayMs: number): Promise<void>;
 
-  pendingDeliveries(limit?: number): Promise<Run[]>;
-  markDeliveryQueued(runId: string): Promise<void>;
-
   onTerminal(listener: (run: Run) => void): void;
 
   get(runId: string): Promise<Run | null>;

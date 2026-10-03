@@ -1,3 +1,4 @@
+import { NonRetryableTurnError } from "../turn-error.ts";
 import type { Principal, Resolution, ScopeId, Session, SessionEntry } from "../../types.ts";
 import { personalScope } from "../../types.ts";
 import { intersectEgressPolicies } from "../../resolution/egress-policy.ts";
@@ -25,7 +26,6 @@ import {
   rehomeSkillPaths,
   renderSkillBody,
   skillDir,
-  skillTreeFingerprint,
   SKILLS_DIR,
 } from "../../skills/materialize.ts";
 import { safeSkillFilePath, type SkillResolution } from "../../skills/skill-store.ts";
@@ -448,23 +448,16 @@ export function createTurnSandboxes(ctx: TurnSandboxContext) {
     return handle;
   };
   const skillsRoot = `${turnFilesDir}/${SKILLS_DIR}`;
-  const laidTrees = new Map<string, string>();
+  const laidTrees = new Set<string>();
   const restoredDirs = new Map<string, Set<string>>();
-  const materializeSkillTree = async (
-    handle: SandboxHandle,
-    r: SkillResolution,
-    sandboxId?: string,
-  ): Promise<string> => {
+  const materializeSkillTree = async (handle: SandboxHandle, r: SkillResolution, sandboxId?: string): Promise<void> => {
     const treeKey = `${sandboxId ?? "default"}:${skillDir(skillsRoot, r)}`;
-    const existing = laidTrees.get(treeKey);
-    if (existing) return existing;
+    if (laidTrees.has(treeKey)) return;
     const start = Date.now();
     try {
       const bundles = r.screenedBundles ?? (deps.skillBundles ? await loadActiveBundles(deps.skillBundles, [r]) : []);
       await laySkillTree(deps.sandbox, handle, skillsRoot, r, bundles);
-      const fingerprint = skillTreeFingerprint(r, bundles);
-      laidTrees.set(treeKey, fingerprint);
-      return fingerprint;
+      laidTrees.add(treeKey);
     } catch (err) {
       deps.errors?.record(
         {
@@ -509,13 +502,12 @@ export function createTurnSandboxes(ctx: TurnSandboxContext) {
     const access = sandboxId ? await accessResource(sandboxId) : undefined;
     if (access?.crossScope) return { content, sourceScopeId: resolution.skill.scopeId };
     const handle = access ? await provisionResource(access) : await provision();
-    const fingerprint = await materializeSkillTree(handle, resolution, sandboxId);
+    await materializeSkillTree(handle, resolution, sandboxId);
     const pack = packRoot(skillsRoot, resolution);
     return {
       content,
       sourceScopeId: resolution.skill.scopeId,
       dir: skillDir(skillsRoot, resolution),
-      fingerprint,
       ...(pack ? { packDir: pack } : {}),
     };
   };
@@ -527,7 +519,6 @@ export function createTurnSandboxes(ctx: TurnSandboxContext) {
         tool?: string;
         name?: string;
         dir?: string;
-        fingerprint?: string;
         sandboxId?: string;
         isError?: boolean;
       } | null;
@@ -541,16 +532,14 @@ export function createTurnSandboxes(ctx: TurnSandboxContext) {
         relative[2] !== payload.name ||
         !isSafeSkillName(relative[2]!)
       )
-        throw new Error("Cannot restore skill files outside this turn's directory");
+        throw new NonRetryableTurnError("Cannot restore skill files outside this turn's directory");
       const resolution = visible.find((r) => r.skill?.manifest.name === payload.name);
-      if (!resolution?.skill) throw new Error(`Cannot restore unavailable skill ${payload.name}`);
+      if (!resolution?.skill) throw new NonRetryableTurnError(`Cannot restore unavailable skill ${payload.name}`);
       const bundles =
         resolution.screenedBundles ??
         (deps.skillBundles ? await loadActiveBundles(deps.skillBundles, [resolution]) : []);
-      if (!payload.fingerprint || skillTreeFingerprint(resolution, bundles) !== payload.fingerprint)
-        throw new Error(`Cannot restore changed skill ${payload.name}`);
       const access = payload.sandboxId ? await accessResource(payload.sandboxId) : undefined;
-      if (access?.crossScope) throw new Error("Cannot restore skill files on a cross-scope sandbox");
+      if (access?.crossScope) throw new NonRetryableTurnError("Cannot restore skill files on a cross-scope sandbox");
       const handle = access ? await provisionResource(access) : await provision();
       const root = `${prefix}${relative[0]}/${SKILLS_DIR}`;
       const key = `${handle.backend}:${handle.id}`;
@@ -856,7 +845,7 @@ export function createTurnSandboxes(ctx: TurnSandboxContext) {
   };
   const reclaimBox = async (deadline?: AbortSignal): Promise<void> => {
     const startedAt = Date.now();
-    const steps: Array<{ step: string; backend?: string; ms: number; ok: boolean }> = [];
+    let steps = 0;
     const deferred: string[] = [];
     const timed = async <T>(step: string, handle: SandboxHandle | undefined, work: () => Promise<T>): Promise<T> => {
       const at = Date.now();
@@ -866,11 +855,14 @@ export function createTurnSandboxes(ctx: TurnSandboxContext) {
         ok = true;
         return value;
       } finally {
-        steps.push({ step, ...(handle?.backend ? { backend: handle.backend } : {}), ms: Date.now() - at, ok });
+        steps++;
+        console.error(
+          `[sandbox.cleanup] step=${step} backend=${handle?.backend ?? "unknown"} ms=${Date.now() - at} ok=${ok}`,
+        );
       }
     };
     const audit = (scrubPending: boolean) =>
-      (steps.length || deferred.length) &&
+      (steps || deferred.length) &&
       deps.auditLog?.record({
         at: Date.now(),
         principalId: actor.id,
@@ -881,7 +873,6 @@ export function createTurnSandboxes(ctx: TurnSandboxContext) {
           runId: input.runId,
           sessionId: session.id,
           totalMs: Date.now() - startedAt,
-          steps,
           deferred,
           ...(scrubPending ? { scrubPending } : {}),
         }),

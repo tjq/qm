@@ -263,6 +263,7 @@ export function defineHarness(
 ): Harness {
   const turns: HarnessTurnController = {
     runTurn: async (input) => {
+      if (profile.id !== "pi") return implementation.runTurn(input);
       let closed = false;
       const writes = new Set<Promise<unknown>>();
       const retire = () => {
