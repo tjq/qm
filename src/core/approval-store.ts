@@ -3,6 +3,8 @@ import type { PendingApprovalRecord } from "../types.ts";
 import type { DurableMap } from "../persistence/durable-map.ts";
 import type { DeliveryStore } from "../delivery/delivery-store.ts";
 import { principalDestination } from "../reach/reach.ts";
+import { samePerson } from "../directory/person.ts";
+import type { Destination } from "../types.ts";
 
 export function approvalDeliveryKey(id: string, record: Pick<PendingApprovalRecord, "createdAt">): string {
   return `command-approval:${id}:${record.createdAt ?? 0}`;
@@ -11,6 +13,15 @@ export function approvalDeliveryKey(id: string, record: Pick<PendingApprovalReco
 export function approvalDeliveryRecipient(actor: { externalId?: string } | undefined): string | undefined {
   const id = actor?.externalId;
   return id && !id.startsWith("system:") ? id : undefined;
+}
+
+export function approvalDestination(
+  request: Pick<NonNullable<PendingApprovalRecord["request"]>, "surface" | "triggerDestination">,
+  actorId: string,
+): Destination {
+  const d = request.surface === "cron" ? request.triggerDestination : undefined;
+  if (d && d.type !== "web" && (d.type !== "principal" || samePerson(d.target, actorId))) return d;
+  return principalDestination(actorId, actorId);
 }
 
 export function createApprovalStore(
@@ -23,7 +34,7 @@ export function createApprovalStore(
     if (!actorId) return;
     await deliveries.enqueue({
       destination: {
-        ...principalDestination(actorId, actorId),
+        ...approvalDestination(record.request, actorId),
         commandApprovalId: id,
         ...(record.request.slackSource
           ? { slackAccountId: record.request.slackSource.accountId, slackTeamId: record.request.slackSource.teamId }
