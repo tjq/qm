@@ -371,24 +371,19 @@ export function createMemorySessionStore(opts: StoreOptions = {}): SessionStore 
     },
 
     async getTape(sessionId, opts?: GetTapeOptions) {
-      const log = tape.get(sessionId) ?? [];
-      const since = opts?.sinceSeq;
-      const filtered = since !== undefined ? log.filter((r) => r.seq > since) : log;
-      return opts?.limit !== undefined ? filtered.slice(-opts.limit) : [...filtered];
+      const filtered = (tape.get(sessionId) ?? []).filter(
+        (row) =>
+          (opts?.sinceSeq === undefined || row.seq > opts.sinceSeq) &&
+          (opts?.kind === undefined || row.kind === opts.kind) &&
+          (opts?.runId === undefined || (row.payload as { runId?: string } | null)?.runId === opts.runId),
+      );
+      return opts?.limit !== undefined ? filtered.slice(-opts.limit) : filtered;
     },
 
     async stopMarks(sessionId) {
-      const marks: number[] = [];
-      let lastEntry: number | undefined;
-      for (const row of tape.get(sessionId) ?? []) {
-        if (row.entrySeq !== undefined) lastEntry = Math.max(lastEntry ?? -1, row.entrySeq);
-        if (row.kind === "stop" && lastEntry !== undefined) {
-          const runId = (row.payload as { runId?: string }).runId;
-          const user = runId ? await this.getRunUserEntry(sessionId, runId) : undefined;
-          if (!runId || (user && user.seq <= lastEntry)) marks.push(lastEntry);
-        }
-      }
-      return marks;
+      return (tape.get(sessionId) ?? []).flatMap((row) =>
+        row.kind === "stop" && row.entrySeq !== undefined ? [row.entrySeq] : [],
+      );
     },
 
     async getRunUserEntry(sessionId, runId) {

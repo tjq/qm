@@ -735,6 +735,15 @@ export function createPostgresSessionStore(connectionString: string, opts: Store
            ON CONFLICT DO NOTHING`,
         ],
       },
+      {
+        id: "sessions/store/0024-run-lookup-indexes",
+        statements: [
+          `CREATE INDEX CONCURRENTLY IF NOT EXISTS session_entries_by_run
+           ON session_entries(session_id, (safe_json(replace(payload, '\\u0000', ''))->>'runId'), seq) WHERE type = 'user'`,
+          `CREATE INDEX CONCURRENTLY IF NOT EXISTS session_tape_stops_by_run
+           ON session_tape(session_id, (safe_json(replace(payload, '\\u0000', ''))->>'runId'), seq) WHERE kind = 'stop'`,
+        ],
+      },
     ],
     [
       {
@@ -1061,31 +1070,26 @@ export function createPostgresSessionStore(connectionString: string, opts: Store
     },
 
     async getTape(sessionId, opts: GetTapeOptions = {}): Promise<TapeRecord[]> {
-      const since = opts.sinceSeq ?? -1;
+      const params: unknown[] = [sessionId, opts.sinceSeq ?? -1];
+      const where = ["session_id = $1", "seq > $2"];
+      if (opts.kind !== undefined) where.push(`kind = $${params.push(opts.kind)}`);
+      if (opts.runId !== undefined)
+        where.push(`safe_json(replace(payload, '\\u0000', ''))->>'runId' = $${params.push(opts.runId)}`);
       if (opts.limit !== undefined) {
         const rows = await q(
-          "SELECT * FROM session_tape WHERE session_id = $1 AND seq > $2 ORDER BY seq DESC LIMIT $3",
-          [sessionId, since, opts.limit],
+          `SELECT * FROM session_tape WHERE ${where.join(" AND ")} ORDER BY seq DESC LIMIT $${params.push(opts.limit)}`,
+          params,
         );
         return rows.map(rowToTape).reverse();
       }
-      const rows = await q("SELECT * FROM session_tape WHERE session_id = $1 AND seq > $2 ORDER BY seq ASC", [
-        sessionId,
-        since,
-      ]);
-      return rows.map(rowToTape);
+      return (await q(`SELECT * FROM session_tape WHERE ${where.join(" AND ")} ORDER BY seq ASC`, params)).map(
+        rowToTape,
+      );
     },
 
     async stopMarks(sessionId): Promise<number[]> {
       const rows = await q(
-        `SELECT MAX(e.entry_seq) AS entry_seq FROM session_tape s
-          JOIN session_tape e ON e.session_id = s.session_id AND e.seq < s.seq
-          WHERE s.session_id = $1 AND s.kind = 'stop'
-            AND (safe_json(s.payload)->>'runId' IS NULL OR EXISTS (
-              SELECT 1 FROM session_entries u WHERE u.session_id = s.session_id AND u.type = 'user'
-                AND safe_json(u.payload)->>'runId' = safe_json(s.payload)->>'runId' AND u.seq <= e.entry_seq
-            ))
-          GROUP BY s.seq HAVING MAX(e.entry_seq) IS NOT NULL`,
+        "SELECT entry_seq FROM session_tape WHERE session_id = $1 AND kind = 'stop' AND entry_seq IS NOT NULL ORDER BY seq",
         [sessionId],
       );
       return rows.map((r) => Number(r.entry_seq));
@@ -1094,7 +1098,7 @@ export function createPostgresSessionStore(connectionString: string, opts: Store
     async getRunUserEntry(sessionId, runId): Promise<SessionEntry | undefined> {
       const rows = await q(
         `SELECT * FROM session_entries WHERE session_id = $1 AND type = 'user'
-          AND safe_json(payload)->>'runId' = $2 ORDER BY seq LIMIT 1`,
+          AND safe_json(replace(payload, '\\u0000', ''))->>'runId' = $2 ORDER BY seq LIMIT 1`,
         [sessionId, runId],
       );
       return rows[0] ? rowToEntry(rows[0]) : undefined;

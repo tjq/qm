@@ -4,7 +4,6 @@ import {
   filterTapeForAudience,
   foldTape,
   lintFold,
-  tapeEndsAtCommittedStep,
   planTapeSeed,
   rehydrateFoldImages,
 } from "../src/harness/tape-fold.ts";
@@ -731,35 +730,14 @@ test("compacted-away image refs consume no reads or hydration budget", async () 
   assert.ok(planTapeSeed(rows, "pi", "serve", hydrated).seed);
 });
 
-test("a fold ends at a committed step only when its last message is a tool result or user turn with no open calls", () => {
-  const user = { role: "user", content: [{ type: "text", text: "go" }] };
-  const call = { role: "assistant", content: [{ type: "toolCall", id: "c1", name: "exec", arguments: {} }] };
-  const result = { role: "toolResult", toolCallId: "c1", content: [{ type: "text", text: "done" }] };
-  const answer = { role: "assistant", content: [{ type: "text", text: "all set" }] };
-  assert.equal(tapeEndsAtCommittedStep([user, call, result]), true);
-  assert.equal(tapeEndsAtCommittedStep([user]), true);
-  assert.equal(tapeEndsAtCommittedStep([user, call]), false, "a dangling tool call is not a committed step");
-  assert.equal(tapeEndsAtCommittedStep([user, call, result, answer]), false, "a finished answer is not resumable");
-  assert.equal(tapeEndsAtCommittedStep([]), false);
-  assert.equal(tapeEndsAtCommittedStep(undefined), false);
-});
-
-test("interrupted tool results cannot masquerade as a committed batch", () => {
-  const rows = [
-    user("go"),
-    assistant([
-      { type: "toolCall", id: "c1", name: "exec" },
-      { type: "toolCall", id: "c2", name: "exec" },
-    ]),
-    toolResult("c1", INTERRUPTED_TOOL_RESULT),
-    toolResult("c2", "done"),
-  ];
-  assert.equal(tapeEndsAtCommittedStep(foldTape(rows)), false);
+test("a Stop whose run wrote nothing adds no model message", () => {
+  const rows = [user("old request"), row({ kind: "stop", payload: { reason: "user", runId: "never-started" } })];
+  assert.equal(foldTape(rows).length, 1);
 });
 
 test("Stop is replayed as platform metadata without rewriting the recorded messages", () => {
   const request = user("old request");
-  const stopped = row({ kind: "stop", payload: { reason: "user" } });
+  const stopped = row({ kind: "stop", entrySeq: 0, payload: { reason: "user", runId: "r1" } });
   const next = user("new request");
   const rows = [request, stopped, next];
   const before = structuredClone(rows);

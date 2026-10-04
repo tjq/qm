@@ -584,6 +584,7 @@ test("a typed stop event marks its anchored entry for display without breaking t
   const stoppedSeq = (await sim.store.getEntries(sim.session.id)).find((e) => e.type === "assistant")!.seq;
   await sim.store.appendTape(sim.lease, {
     kind: "stop",
+    entrySeq: stoppedSeq,
     payload: { reason: "user" },
     scopeLabel: scope,
   });
@@ -600,7 +601,7 @@ test("a typed stop event marks its anchored entry for display without breaking t
   const plain = await stored.getOrCreateByThread("dm:stop-plain", "dm", scope);
   const { lease } = await stored.acquireLease(plain.id);
   const user = await stored.append(lease!, { type: "user", payload: { text: "go" }, scopeLabel: scope });
-  await stored.appendTape(lease!, { kind: "stop", payload: { reason: "user" }, scopeLabel: scope });
+  await stored.appendTape(lease!, { kind: "stop", entrySeq: user.seq, payload: { reason: "user" }, scopeLabel: scope });
   assert.deepEqual(
     (await createTranscriptSource(stored).forRender(plain.id)).entries.map((e) => [e.seq, e.stopped]),
     [[user.seq, true]],

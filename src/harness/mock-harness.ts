@@ -96,15 +96,19 @@ export function createMockHarness(): Harness {
     },
     {
       async runTurn(turn: HarnessTurnInput): Promise<HarnessTurnResult> {
-        const userEntry = await turn.emit({
-          type: "user",
-          payload: {
-            text: turn.input,
-            ...((turn.triggerTs ?? turn.entryTs) ? { ts: turn.triggerTs ?? turn.entryTs } : {}),
-            ...(turn.attachments?.length ? { attachments: turn.attachments } : {}),
-          },
-          scopeLabel: turn.scopeLabel,
-        });
+        const userEntry =
+          (turn.continueTurn
+            ? turn.history.find((e) => e.type === "user" && (e.payload as { runId?: string })?.runId === turn.runId)
+            : undefined) ??
+          (await turn.emit({
+            type: "user",
+            payload: {
+              text: turn.input,
+              ...((turn.triggerTs ?? turn.entryTs) ? { ts: turn.triggerTs ?? turn.entryTs } : {}),
+              ...(turn.attachments?.length ? { attachments: turn.attachments } : {}),
+            },
+            scopeLabel: turn.scopeLabel,
+          }));
         const modelPrompt = [turn.input, turn.environment].filter((s) => s && s.trim()).join("\n\n");
 
         turn.recordModelCall({
@@ -116,7 +120,7 @@ export function createMockHarness(): Harness {
         const whyCmd = /<why>\s*(![^<\n]+)/.exec(turn.input)?.[1]?.trim();
         const addressedCmd = /<addressed-messages[^>]*>\s*<message[^>]*>\s*(![^<\n]+)/.exec(turn.input)?.[1]?.trim();
         const cmd = firstLine.startsWith("<") ? (whyCmd ?? addressedCmd ?? turn.input) : turn.input;
-        const command0 = cmd.split("\n")[0]?.trim() ?? "";
+        const command0 = turn.continueTurn && cmd !== "!boom-always" ? "" : (cmd.split("\n")[0]?.trim() ?? "");
         const cacheMiss = command0 === "!cachemiss";
         const systemPromptTokens = countTokens(turn.systemPrompt);
         const prefixTokens = cacheMiss ? Math.max(2048, systemPromptTokens) : Math.max(1, systemPromptTokens);
@@ -195,7 +199,7 @@ export function createMockHarness(): Harness {
         } else if (command0 === "!boom-always" || boomAlwaysSessions.has(turn.session.id)) {
           boomAlwaysSessions.add(turn.session.id);
           throw new Error("boom: simulated turn fault");
-        } else if (command0.startsWith("(system note:") && resumePostSessions.has(turn.session.id)) {
+        } else if (turn.continueTurn && resumePostSessions.has(turn.session.id)) {
           const msg = resumePostSessions.get(turn.session.id)!;
           resumePostSessions.delete(turn.session.id);
           await turn.emit({

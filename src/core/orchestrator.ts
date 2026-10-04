@@ -1,6 +1,5 @@
 import type { TapeStopPayload } from "../sessions/session-store.ts";
 import { isUserStop, turnAbortReason } from "../runs/handoff.ts";
-import { uncertainToolCalls } from "../harness/tool-replay.ts";
 import { externalSlackRequestAllowed, currentExternalSlackRun } from "../resolution/external-slack.ts";
 import { externalTools } from "./orchestrator/external-tools.ts";
 import { memoryBoundedEntries, memoryContextPayload, nextMemoryContext } from "../memory/context-boundary.ts";
@@ -130,7 +129,6 @@ import {
   foldTape,
   lintFold,
   rehydrateFoldImages,
-  tapeEndsAtCommittedStep,
   tapeEventsEntitled,
 } from "../harness/tape-fold.ts";
 import { openSessionEntry, searchSessionEntries } from "../sessions/history-search.ts";
@@ -155,7 +153,7 @@ import {
   withoutAlreadyIngested,
 } from "./attachments.ts";
 import { parseRef } from "../acl/resource-ref.ts";
-import { resumeNote, turnAtSeq } from "./turn-resume.ts";
+import { turnAtSeq } from "./turn-resume.ts";
 import type { RecordedTurn } from "./turn-resume.ts";
 import {
   recordedMessageTimestamps,
@@ -1372,10 +1370,10 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
       if (!input.sessionParticipantIds?.length && !automatedTurn)
         await deps.sessions.addParticipant(session.id, actor.id);
 
-      const priorStops = (await deps.sessions.getTape(session.id)).filter(
-        (row) => row.kind === "stop" && row.scopeLabel === scopeId,
-      );
-      if (input.runId && priorStops.some((row) => (row.payload as TapeStopPayload).runId === input.runId))
+      if (
+        input.runId &&
+        (await deps.sessions.getTape(session.id, { kind: "stop", runId: input.runId, limit: 1 })).length
+      )
         return { status: "silent", sessionId: session.id, stopped: true };
       const isRetry = (input.attempt ?? 1) > 1;
       const recordedTurnForRun = async (): Promise<RecordedTurn | null> => {
@@ -2141,17 +2139,13 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
       let stopRecorded = false;
       const recordStop = async (): Promise<void> => {
         if (stopRecorded) return;
-        if (
-          input.runId &&
-          (await deps.sessions.getTape(session.id)).some(
-            (row) => row.kind === "stop" && isObj(row.payload) && row.payload.runId === input.runId,
-          )
-        ) {
-          stopRecorded = true;
-          return;
-        }
+        const user = input.runId
+          ? await deps.sessions.getRunUserEntry(session.id, input.runId)
+          : emittedEntries.find((entry) => entry.type === "user");
+        const entrySeq = user ? await deps.sessions.latestEntrySeq(session.id) : undefined;
         await deps.sessions.appendTape(lease, {
           kind: "stop",
+          ...(entrySeq !== undefined ? { entrySeq } : {}),
           payload: {
             reason: "user",
             ...(input.runId ? { runId: input.runId } : {}),
@@ -3248,28 +3242,9 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
           String((pausedTurnUserEntry.payload as { text?: string } | null)?.text ?? "").trim() === input.text.trim();
         const partial = isRetry ? recordedTurn : null;
         const resume = partial && partial.workEntries > 0 ? partial : null;
-        if (partial) {
-          const recoveryEntries = await deps.sessions.getEntries(session.id, { sinceSeq: partial.userSeq });
-          const recoveryTape = await deps.sessions.getTape(session.id);
-          const turnStart = recoveryTape.findLastIndex(
-            (row) => row.entrySeq === partial.userSeq && row.kind === "message",
-          );
-          const uncertain = uncertainToolCalls(recoveryEntries, turnStart < 0 ? [] : recoveryTape.slice(turnStart));
-          if (uncertain.length)
-            throw new NonRetryableTurnError(
-              `The previous worker stopped before recording the outcome of ${uncertain.join(", ")}. It may still be running or may have completed. I stopped rather than repeat it; check the original operation before continuing.`,
-            );
-          await restoreSkillFiles(visibleHistory.filter((entry) => entry.seq > partial.userSeq));
-        }
+        if (partial) await restoreSkillFiles(visibleHistory.filter((entry) => entry.seq > partial.userSeq));
         const seamlessResume =
-          !!partial &&
-          history === visibleHistory &&
-          !releasedToolOutput &&
-          !recordedTurn?.answer &&
-          !input.approval &&
-          !!tapeRows?.serve &&
-          (!resume || (tapeRows.fold?.at(-1) as { role?: string } | undefined)?.role !== "user") &&
-          tapeEndsAtCommittedStep(tapeRows.fold);
+          !!partial && !recordedTurn?.answer && history.some((entry) => entry.seq === partial.userSeq);
         if (partial)
           postKeys.seed(
             completedSurfaceEnqueues(
@@ -3297,10 +3272,7 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
             `[orchestrator] turn.resume attempt=${input.attempt} thread=${conversation.threadRef} userSeq=${partial.userSeq} workEntries=${partial.workEntries} seamless=${seamlessResume}`,
           );
         }
-        const resumeInput = resumeNote({ backgroundJobs: !!backgroundBroker, workRecorded: !!resume });
-        let turnInput = partial ? resumeInput : baseText;
-        if (partial && !history.some((entry) => entry.seq === partial.userSeq))
-          turnInput += `\nCurrent request (continue from recorded work; do not restart):\n${baseText}`;
+        let turnInput = baseText;
         if (releasedToolOutput) {
           turnInput = `The human released quarantined tool output recorded in the conversation. Continue the original task using that output. The tool action already ran; do not repeat it. Original task: ${baseText}`;
         }
@@ -3754,7 +3726,7 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
             stop: () => turnAbort.abort("user"),
             ...(input.handoff ? { handoff: input.handoff } : {}),
             ...(input.handoffDeadline ? { handoffDeadline: input.handoffDeadline } : {}),
-            ...(seamlessResume && !continuation ? { continueTurn: true } : {}),
+            ...(seamlessResume || continuation ? { continueTurn: true } : {}),
             input: harnessInput,
             ...(!partial && messageTs ? { triggerTs: messageTs } : {}),
             ...(!partial && entryTs ? { entryTs } : {}),
@@ -4047,28 +4019,16 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
                   mode: "shadow" as const,
                 }
               : undefined;
-            segment = await runHarnessSegment(
-              resumeNote() +
-                (recovery ? "\nContext reduced without a new summary." : "\nRuntime handoff completed.") +
-                " Continue the user's unfinished request using the saved conversation and tool results. Do not repeat completed actions or ask the user to repeat the request." +
-                (recovery &&
-                !resumedHistory.some(
-                  (entry) =>
-                    entry.type === "user" &&
-                    isObj(entry.payload) &&
-                    typeof entry.payload.text === "string" &&
-                    entry.payload.text.startsWith(baseText),
-                )
-                  ? `\nCurrent request (continue from recorded work; do not restart):\n${baseText}`
-                  : ""),
-              inbound.images.length ? { images: inbound.images } : {},
-              { history: resumedHistory, ...(resumedTape ? { tape: resumedTape } : {}) },
-            );
+            segment = await runHarnessSegment(baseText, inbound.images.length ? { images: inbound.images } : {}, {
+              history: resumedHistory,
+              ...(resumedTape ? { tape: resumedTape } : {}),
+            });
             modelCalls += segment.modelCalls ?? 0;
             addUsage();
           }
-          if (segment.stopped || isUserStop(turnAbort.signal)) await recordStop();
-          else if (segment.handedOff || turnAbortReason(turnAbort.signal)) throw new TurnHandedOff();
+          if (segment.stopped) await recordStop();
+          else if (segment.handedOff || (turnAbortReason(turnAbort.signal) && !isUserStop(turnAbort.signal)))
+            throw new TurnHandedOff();
           return {
             ...segment,
             ...(segment.reply ? { reply: absoluteAppLinks(segment.reply, deps.publicWebUrl) } : {}),
@@ -4522,11 +4482,13 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
         return finalResult;
       } catch (err) {
         if (isUserStop(turnAbort.signal)) {
+          swallow("orchestrator: interrupted turn", err);
           await recordStop();
           return { status: "silent", sessionId: session.id, stopped: true };
         }
         if (turnAbortReason(turnAbort.signal) === "lease-lost") throw new Error("session lease lost", { cause: err });
-        if (err instanceof TurnHandedOff || turnAbortReason(turnAbort.signal)) throw new TurnHandedOff();
+        if (err instanceof TurnHandedOff) throw err;
+        if (turnAbortReason(turnAbort.signal)) throw new TurnHandedOff({ cause: err });
         if (err instanceof ProjectRosterChanged) {
           return {
             status: "refused",

@@ -1,8 +1,6 @@
 import type { SessionEntry } from "../types.ts";
 import { entryDeliveryKey, isOverheardEntry } from "../sessions/session-store.ts";
 
-const NOTE_HEAD = "(system note:";
-
 interface PartialTurn {
   userSeq: number;
   workEntries: number;
@@ -10,10 +8,6 @@ interface PartialTurn {
 
 function entryText(e: SessionEntry): string {
   return String((e.payload as { text?: string } | null)?.text ?? "").trim();
-}
-
-export function isResumeNote(text: string): boolean {
-  return text.trimStart().startsWith(NOTE_HEAD);
 }
 
 export interface RecordedTurn extends PartialTurn {
@@ -44,24 +38,14 @@ export function turnAtSeq(entries: readonly SessionEntry[], userSeq: number): Re
       workEntries += 1;
       continue;
     }
-    if (isOverheardEntry(e) || isResumeNote(entryText(e))) continue;
+    if (
+      isOverheardEntry(e) ||
+      ((e.payload as { runId?: string } | null)?.runId ===
+        (entries[start]!.payload as { runId?: string } | null)?.runId &&
+        !!(e.payload as { runId?: string } | null)?.runId)
+    )
+      continue;
     break;
   }
   return { userSeq, workEntries, ...(answer ? { answer } : {}) };
-}
-
-export function resumeNote(opts?: { backgroundJobs?: boolean; workRecorded?: boolean }): string {
-  if (opts?.workRecorded === false) {
-    return `${NOTE_HEAD} your previous attempt at the request above was interrupted before it recorded any work, so there is nothing to pick up. Start the request now.)`;
-  }
-  const parts = [
-    `${NOTE_HEAD} your previous attempt at the request above was interrupted mid-turn.`,
-    "Your work up to the interruption is recorded above; a tool result marked interrupted has an",
-    "unknown outcome, so check what actually happened before redoing anything with side effects.",
-  ];
-  if (opts?.backgroundJobs) {
-    parts.push("Background jobs on your computer kept running — `background` list/poll to check on them.");
-  }
-  parts.push("Continue from where you left off; don't start over or repeat completed steps.)");
-  return parts.join(" ");
 }

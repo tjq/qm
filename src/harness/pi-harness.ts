@@ -1909,8 +1909,13 @@ export function createPiHarness(opts?: PiHarnessOptions): Harness {
           };
           turn.onGapWork?.(collectGapWork);
           entry.ref.onGapWork = collectGapWork;
-          const resumedUserEntry = turn.continueTurn
-            ? [...turn.history].reverse().find((e) => e.type === "user" && !isOverheardEntry(e))
+          const lastRole = entry.agentSession.agent.state.messages.at(-1)?.role;
+          const continueTurn = turn.continueTurn && (lastRole === "user" || lastRole === "toolResult");
+          const resumedUserEntry = continueTurn
+            ? (turn.history.find(
+                (e) =>
+                  e.type === "user" && !!turn.runId && (e.payload as { runId?: string } | null)?.runId === turn.runId,
+              ) ?? [...turn.history].reverse().find((e) => e.type === "user" && !isOverheardEntry(e)))
             : undefined;
           const userEntry =
             resumedUserEntry ??
@@ -1955,7 +1960,7 @@ export function createPiHarness(opts?: PiHarnessOptions): Harness {
           const stepWindows: Array<{ gapStart?: number; gapEnd: number }> = [];
           let thinkTail: Promise<unknown> = Promise.resolve();
           let tapeError: Error | undefined;
-          let tapedTriggerUser = !!turn.continueTurn;
+          let tapedTriggerUser = !!continueTurn;
           const toolAbort = new AbortController();
           const pendingSteerTapeMeta: Array<
             SteerIntake & {
@@ -2303,7 +2308,7 @@ export function createPiHarness(opts?: PiHarnessOptions): Harness {
             checkHandoff();
             if (turn.handoff?.aborted) throw new TurnHandedOff();
             wallClock = await runStep(
-              turn.continueTurn
+              continueTurn
                 ? entry.agentSession.agent.continue()
                 : entry.agentSession.prompt(modelPrompt, images ? { images } : undefined),
               {

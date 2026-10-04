@@ -38,7 +38,7 @@ for (const mode of ["retry", "handoff"] as const) {
     let runId: string | undefined;
     exercise = async (turn) => {
       runId = turn.runId;
-      if (mode === "handoff" && turn.input === request.text) {
+      if (mode === "handoff" && !turn.continueTurn) {
         await turn.emit({ type: "user", payload: { text: turn.input }, scopeLabel: turn.scopeLabel });
         return {
           reply: "",
@@ -48,7 +48,8 @@ for (const mode of ["retry", "handoff"] as const) {
           },
         };
       }
-      assert.match(turn.input, /previous attempt|Runtime handoff completed/);
+      assert.equal(turn.input, request.text);
+      assert.equal(turn.continueTurn, true);
       const trigger = await turn.emit({ type: "user", payload: { text: turn.input }, scopeLabel: turn.scopeLabel });
       await turn.tape!({
         kind: "message",

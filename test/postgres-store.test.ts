@@ -3220,7 +3220,12 @@ test(
     const user = await s.append(lease, { type: "user", payload: { text: "go", runId: "r1" }, scopeLabel: scope });
     await s.appendTape(lease, { kind: "stop", payload: { reason: "user", runId: "not-started" }, scopeLabel: scope });
     assert.deepEqual(await s.stopMarks(session.id), []);
-    await s.appendTape(lease, { kind: "stop", payload: { reason: "user", runId: "r1" }, scopeLabel: scope });
+    await s.appendTape(lease, {
+      kind: "stop",
+      entrySeq: user.seq,
+      payload: { reason: "user", runId: "r1" },
+      scopeLabel: scope,
+    });
     assert.deepEqual(await s.stopMarks(session.id), [user.seq]);
     assert.equal((await s.getRunUserEntry(session.id, "r1"))?.seq, user.seq);
     assert.equal(await s.getRunUserEntry(session.id, "missing"), undefined);

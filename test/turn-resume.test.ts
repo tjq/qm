@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isResumeNote, resumeNote, turnAtSeq } from "../src/core/turn-resume.ts";
+import { turnAtSeq } from "../src/core/turn-resume.ts";
 import type { SessionEntry } from "../src/types.ts";
 
 function ent(type: SessionEntry["type"], payload: unknown, seq: number): SessionEntry {
@@ -15,22 +15,6 @@ const toolCall = (seq: number) => ent("tool_call", { tool: "execute", callId: `c
 const toolResult = (seq: number) => ent("tool_result", { callId: `c${seq - 1}`, result: "ok" }, seq);
 const steer = (text: string, seq: number) => ent("user", { text, ts: String(seq), steered: true }, seq);
 const delivered = (text: string, seq: number) => ent("assistant", { text, deliveryKey: `run:other-${seq}` }, seq);
-
-test("resumeNote is recognized by isResumeNote and mentions background jobs only when offered", () => {
-  assert.ok(isResumeNote(resumeNote()));
-  assert.ok(isResumeNote(resumeNote({ backgroundJobs: true })));
-  assert.doesNotMatch(resumeNote(), /background/i);
-  assert.match(resumeNote({ backgroundJobs: true }), /`background` list\/poll/);
-  assert.ok(!isResumeNote("build and deploy the release"));
-});
-
-test("the no-work wording promises nothing recorded, and neither wording re-sends the input", () => {
-  const restart = resumeNote({ workRecorded: false });
-  assert.ok(isResumeNote(restart));
-  assert.doesNotMatch(restart, /recorded above|Continue from where you left off/);
-  assert.match(restart, /nothing to pick up\. Start the request now/);
-  for (const note of [resumeNote(), restart]) assert.doesNotMatch(note, /build and deploy the release/);
-});
 
 test("turnAtSeq carries the answer the attempt recorded, so a retry can replay it", () => {
   const entries = [user("do the thing", 1), toolCall(2), toolResult(3), assistant("done", 4)];
@@ -52,12 +36,12 @@ test("turnAtSeq stops at a later ask, so another run's answer is not read as thi
   assert.deepEqual(turnAtSeq(entries, 1), { userSeq: 1, workEntries: 0 });
 });
 
-test("turnAtSeq reads through the resume note and the overheard traffic of its own turn", () => {
+test("turnAtSeq reads through same-run continuations and the overheard traffic of its own turn", () => {
   const entries = [
-    user("mine", 1),
+    ent("user", { text: "mine", runId: "r1" }, 1),
     toolCall(2),
     overheard("chatter", 3),
-    user(resumeNote(), 4),
+    ent("user", { text: "mine", runId: "r1" }, 4),
     toolCall(5),
     assistant("finished", 6),
   ];

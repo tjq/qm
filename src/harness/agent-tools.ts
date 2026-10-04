@@ -1,5 +1,4 @@
 import { TurnHandedOff } from "../core/turn-error.ts";
-import { toolReplayPolicy } from "./tool-replay.ts";
 import { MaskedExecutionError } from "../security/secret-masking.ts";
 import type { DocumentInput } from "../core/document-inputs.ts";
 import { createKeyedQueue } from "../util/async.ts";
@@ -439,7 +438,7 @@ export function createAgentTools(ref: ToolContextRef, opts?: AgentToolsOptions):
   };
 
   const recordCall = async (callId: string, payload: Record<string, unknown>): Promise<void> => {
-    await log("tool_call", { ...sandboxLog(payload), callId, replay: toolReplayPolicy(payload) });
+    await log("tool_call", { ...sandboxLog(payload), callId });
     ref.abortSignal?.throwIfAborted();
     if (ref.handoffRequested) {
       await log("tool_result", {

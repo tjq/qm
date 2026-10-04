@@ -287,6 +287,8 @@ export interface TapeRecord extends NewTapeRecord {
 }
 
 export interface GetTapeOptions {
+  kind?: TapeKind;
+  runId?: string;
   sinceSeq?: number;
   limit?: number;
 }

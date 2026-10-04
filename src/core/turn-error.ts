@@ -15,8 +15,8 @@ export class ProviderTurnError extends Error {
 }
 
 export class TurnHandedOff extends Error {
-  constructor() {
-    super("turn handed off to the incoming deployment");
+  constructor(options?: ErrorOptions) {
+    super("turn handed off to the incoming deployment", options);
     this.name = "TurnHandedOff";
   }
 }

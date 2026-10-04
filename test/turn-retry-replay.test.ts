@@ -63,19 +63,21 @@ function buildScenario() {
     {
       async runTurn(turn) {
         turns.push(turn.input);
-        const userEntry = await turn.emit({
-          type: "user",
-          payload: { text: turn.input },
-          scopeLabel: turn.scopeLabel,
-        });
-        await turn.tape?.({
-          kind: "message",
-          harness: "pi",
-          payload: { role: "user", content: [{ type: "text", text: turn.input }], timestamp: Date.now() },
-          scopeLabel: turn.scopeLabel,
-          entrySeq: userEntry.seq,
-          meta: { bareText: turn.input },
-        });
+        if (!turn.continueTurn) {
+          const userEntry = await turn.emit({
+            type: "user",
+            payload: { text: turn.input },
+            scopeLabel: turn.scopeLabel,
+          });
+          await turn.tape?.({
+            kind: "message",
+            harness: "pi",
+            payload: { role: "user", content: [{ type: "text", text: turn.input }], timestamp: Date.now() },
+            scopeLabel: turn.scopeLabel,
+            entrySeq: userEntry.seq,
+            meta: { bareText: turn.input },
+          });
+        }
         const reply = "it runs on this conversation's computer";
         await turn.tape?.({
           kind: "message",

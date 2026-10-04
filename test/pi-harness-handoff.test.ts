@@ -246,6 +246,63 @@ test(
       assert.equal((await pending).handedOff, true);
       assert.equal(sink.entries.filter((entry) => entry.type === "tool_call").length, 1);
       assert.equal(sink.entries.filter((entry) => entry.type === "tool_result").length, 0);
+      await harness.turns.close?.();
+      for (const recordedResult of [false, true]) {
+        const fresh = createPiHarness({ apiKey: "sk-test" });
+        const requests: string[] = [];
+        globalThis.fetch = (async (_url: unknown, init: RequestInit) => {
+          requests.push(String(init.body));
+          return sse(textReplyEvents("checking the previous command"));
+        }) as typeof fetch;
+        const resumed: Sink = { entries: [], tape: [] };
+        try {
+          const result = await fresh.turns.runTurn(
+            handoffTurn(
+              "late-command",
+              {
+                handoff: new AbortController().signal,
+                handoffDeadline: new AbortController().signal,
+              },
+              resumed,
+              {
+                continueTurn: true,
+                history: [
+                  ...sink.entries,
+                  ...(recordedResult
+                    ? [
+                        {
+                          seq: 2,
+                          type: "tool_result",
+                          payload: { tool: "execute", callId: "write1", result: "completed remotely" },
+                        },
+                      ]
+                    : []),
+                ].map((entry) => ({
+                  ...entry,
+                  sessionId: "late-command",
+                  createdAt: 1,
+                  scopeLabel: "personal:tester",
+                })) as SessionEntry[],
+                tapeRows: sink.tape.map((entry, seq) => ({ ...entry, seq, sessionId: "late-command", createdAt: seq })),
+                tapeMode: "serve",
+                tools: {
+                  execute: async () => {
+                    assert.fail("the interrupted command must not be automatically repeated");
+                  },
+                } as unknown as HarnessTurnInput["tools"],
+              },
+            ),
+          );
+          assert.equal(result.reply, "checking the previous command");
+          assert.equal(requests.length, 1);
+          assert.equal(requests[0]!.includes("outcome is unknown"), !recordedResult);
+          assert.equal(requests[0]!.includes("completed remotely"), recordedResult);
+          assert.ok(!requests[0]!.includes("system note:"));
+          assert.equal(resumed.entries.filter((entry) => entry.type === "user").length, 0);
+        } finally {
+          await fresh.turns.close?.();
+        }
+      }
     } finally {
       globalThis.fetch = realFetch;
       finishCleanup.resolve();
