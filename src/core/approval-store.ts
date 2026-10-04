@@ -4,7 +4,7 @@ import type { DurableMap } from "../persistence/durable-map.ts";
 import type { DeliveryStore } from "../delivery/delivery-store.ts";
 import { principalDestination } from "../reach/reach.ts";
 import { samePerson } from "../directory/person.ts";
-import type { Destination } from "../types.ts";
+import { scopeId, type Destination } from "../types.ts";
 
 export function approvalDeliveryKey(id: string, record: Pick<PendingApprovalRecord, "createdAt">): string {
   return `command-approval:${id}:${record.createdAt ?? 0}`;
@@ -16,9 +16,19 @@ export function approvalDeliveryRecipient(actor: { externalId?: string } | undef
 }
 
 export function approvalDestination(
-  request: Pick<NonNullable<PendingApprovalRecord["request"]>, "surface" | "triggerDestination">,
+  request: Pick<
+    NonNullable<PendingApprovalRecord["request"]>,
+    "surface" | "triggerDestination" | "conversation" | "deliveryTarget"
+  >,
   actorId: string,
 ): Destination {
+  const c = request.conversation;
+  if (request.surface === "slack" && c?.kind !== "dm" && c?.channelRef && request.deliveryTarget)
+    return {
+      type: "slack",
+      target: request.deliveryTarget,
+      audienceScopeId: scopeId(c.kind === "group" ? "group" : "channel", c.channelRef),
+    };
   const d = request.surface === "cron" ? request.triggerDestination : undefined;
   if (d && d.type !== "web" && (d.type !== "principal" || samePerson(d.target, actorId))) return d;
   return principalDestination(actorId, actorId);

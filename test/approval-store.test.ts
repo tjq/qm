@@ -122,3 +122,17 @@ test("scheduled-task approvals post at the task's own destination, like credenti
   web.request!.triggerDestination = { type: "web", target: "s1" } as never;
   assert.equal(approvalDestination(web.request!, "U1").target, "U1");
 });
+
+test("Slack channel approvals post in the requesting thread; DMs stay in the DM", async () => {
+  const thread = record("slack:C1:1.0");
+  thread.request!.conversation = { kind: "channel", threadRef: "slack:C1:1.0", channelRef: "C1" };
+  thread.request!.deliveryTarget = "C1:1.0";
+  assert.deepEqual(approvalDestination(thread.request!, "U1"), {
+    type: "slack",
+    target: "C1:1.0",
+    audienceScopeId: "channel:C1",
+  });
+  const dm = record("dm:D1");
+  dm.request!.deliveryTarget = "D1";
+  assert.equal(approvalDestination(dm.request!, "U1").type, "principal");
+});
