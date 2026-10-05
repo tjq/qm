@@ -126,6 +126,35 @@ test("graceful handbacks never count toward the claim cap; crash reaps still do"
   assert.match(parked?.result?.reason ?? "", /parked after 2 claims .*suspected crash loop/);
 });
 
+test("a crash shutdown aborts the turn without a handback, so the lease expiry counts toward the cap", async () => {
+  const { runs } = createMemoryRunStore({ maxClaims: 1 });
+  const r = (await runs.enqueue({ sessionId: "s1", request: turn, maxAttempts: 99 })).run;
+  let markStarted: () => void = () => {};
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve;
+  });
+  const orchestrator = {
+    handleTurn: (input: OrchestratorInput & { cancel: AbortSignal }) =>
+      new Promise((resolve) => {
+        input.cancel.addEventListener("abort", () => resolve({ status: "silent" }), { once: true });
+        markStarted();
+      }),
+  } as unknown as Orchestrator;
+  const worker = createWorker({ runs, orchestrator, leaseTtlMs: 10, heartbeatIntervalMs: 60_000, pollMs: 5 });
+  worker.start();
+  await started;
+  await worker.releaseInFlight(true);
+  const held = await runs.get(r.id);
+  assert.equal(held?.status, "running", "no handback on a crash");
+  assert.equal(held?.handbacks, 0);
+  await sleep(20);
+  assert.deepEqual(await createReaper(runs, createMemorySessionStore(), { intervalMs: 60_000 }).sweep(), {
+    requeued: 0,
+    parked: 1,
+  });
+  assert.match((await runs.get(r.id))?.result?.reason ?? "", /suspected crash loop/);
+});
+
 test("a concrete error parks with its own message even when over the claim cap", async () => {
   const { runs } = createMemoryRunStore({ maxClaims: 2 });
   const r = (await runs.enqueue({ sessionId: "s1", request: turn, maxAttempts: 99 })).run;
