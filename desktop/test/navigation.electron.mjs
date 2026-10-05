@@ -49,7 +49,7 @@ async function waitFor(read) {
       page.show();
       page.focus();
       await waitFor(() => page.webContents.executeJavaScript("document.hasFocus()"));
-      const link = `${origin}/?session=copy-link-test`;
+      const link = `${page.webContents.getURL()}?session=copy-link-test`;
       await page.webContents.executeJavaScript(`navigator.clipboard.writeText(${JSON.stringify(link)})`, true);
       await waitFor(async () => (await clipboard.readText()) === link);
       assert.equal(
@@ -86,7 +86,7 @@ async function waitFor(read) {
     main.destroy();
     assert.equal(BrowserWindow.getAllWindows().length, 0);
     console.log(
-      "PASS: separate previews, cookie isolation, blob URLs, blank POST popups, sandbox, browser bridge and child cleanup",
+      "PASS: separate previews, cookie isolation, blob URLs, blank POST popups, sandbox, clipboard writes and read denial, browser bridge and child cleanup",
     );
   } finally {
     for (const window of BrowserWindow.getAllWindows()) window.destroy();
