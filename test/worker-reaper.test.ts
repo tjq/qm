@@ -102,6 +102,30 @@ test("with maxClaims set, repeated lease-expiry reaps PARK the poison pill inste
   assert.match(parked?.result?.reason ?? "", /suspected crash loop/);
 });
 
+test("graceful handbacks never count toward the claim cap; crash reaps still do", async () => {
+  const { runs } = createMemoryRunStore({ maxClaims: 2 });
+  const r = (await runs.enqueue({ sessionId: "s1", request: turn, maxAttempts: 99 })).run;
+  const reaper = createReaper(runs, createMemorySessionStore(), { intervalMs: 60_000 });
+
+  for (let i = 0; i < 10; i++) {
+    const claimed = await runs.claim("draining-worker", 60_000);
+    assert.equal(await runs.releaseLease(r.id, claimed!.leaseToken!), true);
+  }
+  assert.equal((await runs.get(r.id))?.status, "pending", "ten deploy cuts leave the run queued");
+
+  await runs.claim("dead-worker", 10);
+  await sleep(20);
+  assert.deepEqual(await reaper.sweep(), { requeued: 1, parked: 0 }, "first crash claim is under the cap");
+
+  await runs.claim("dead-worker", 10);
+  await sleep(20);
+  assert.deepEqual(await reaper.sweep(), { requeued: 0, parked: 1 }, "second crash claim reaches the cap");
+  const parked = await runs.get(r.id);
+  assert.equal(parked?.attempts, 12, "attempts stays monotonic for the tool ledger");
+  assert.equal(parked?.handbacks, 10);
+  assert.match(parked?.result?.reason ?? "", /parked after 2 claims .*suspected crash loop/);
+});
+
 test("a concrete error parks with its own message even when over the claim cap", async () => {
   const { runs } = createMemoryRunStore({ maxClaims: 2 });
   const r = (await runs.enqueue({ sessionId: "s1", request: turn, maxAttempts: 99 })).run;
