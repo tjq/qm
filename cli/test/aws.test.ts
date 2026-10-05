@@ -6215,22 +6215,25 @@ test("controlled AWS cohorts bind immutable identities and hand over without ECS
     const missingShortArn = "arn:aws:ecs:us-west-2:123456789012:task/expired-core";
     const missingArn = "arn:aws:ecs:us-west-2:123456789012:task/acme-qm/expired-core";
     const otherClusterArn = "arn:aws:ecs:us-west-2:123456789012:task/other-qm/expired-core";
+    const otherAccountArn = "arn:aws:ecs:us-west-2:210987654321:task/acme-qm/expired-core";
     for (const [instanceId, arn] of [
       ["expired-short", missingShortArn],
       ["expired-instance", missingArn],
       ["expired-elsewhere", otherClusterArn],
+      ["expired-foreign", otherAccountArn],
     ] as const)
       ownership.members.push({ ...ownership.members[0]!, instanceId, taskArn: arn, generation: 2, retired: false });
     writeFileSync(
       fake.state,
       JSON.stringify({
         ...JSON.parse(readFileSync(fake.state, "utf8")),
-        missingTasks: [missingShortArn, missingArn, otherClusterArn],
+        missingTasks: [missingShortArn, missingArn, otherClusterArn, otherAccountArn],
       }),
     );
     for (const [instanceId, arn] of [
       ["expired-short", missingShortArn],
       ["expired-elsewhere", otherClusterArn],
+      ["expired-foreign", otherAccountArn],
     ] as const)
       await assert.rejects(
         awsRetireBackgroundWorkMembers(
@@ -6248,7 +6251,9 @@ test("controlled AWS cohorts bind immutable identities and hand over without ECS
     ownership.members.splice(
       0,
       ownership.members.length,
-      ...ownership.members.filter((member) => !["expired-short", "expired-elsewhere"].includes(member.instanceId)),
+      ...ownership.members.filter(
+        (member) => !["expired-short", "expired-elsewhere", "expired-foreign"].includes(member.instanceId),
+      ),
     );
     await awsSetBackgroundWork(single, dir, false);
     ownership.members[0]!.state = "admitted";
