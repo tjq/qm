@@ -3160,6 +3160,7 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
           }
         })();
         const compactStart = Date.now();
+        const resumeRequest = partial ? visibleHistory.find((entry) => entry.seq === partial.userSeq) : undefined;
         const history = await withManagedRosterVersion(() =>
           compactContextIfNeeded({
             cancel: turnAbort.signal,
@@ -3170,6 +3171,7 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
             orgScopeId: resolution.orgScopeId,
             actorId: actor.id,
             ...(input.model ? { model: input.model } : {}),
+            ...(resumeRequest ? { request: resumeRequest } : {}),
           }),
         );
         contextRecovered =
@@ -4031,6 +4033,7 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
                 includeSecurityTainted: false,
               }),
             );
+            const turnRequest = resumedHistory.find((entry) => entry.seq === spine.turnUserEntrySeq);
             if (recovery)
               resumedHistory = await withManagedRosterVersion(() =>
                 compactRecent({
@@ -4042,6 +4045,7 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
                   actorId: actor.id,
                   ...(requestedRuntime.modelId ? { model: requestedRuntime.modelId } : {}),
                   cancel: turnAbort.signal,
+                  ...(turnRequest ? { request: turnRequest } : {}),
                 }),
               );
             contextRecovered ||= recovery;
