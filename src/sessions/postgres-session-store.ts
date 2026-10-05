@@ -885,24 +885,35 @@ export function createPostgresSessionStore(connectionString: string, opts: Store
     return full;
   };
 
-  type UserPreviews = { first: string; last: string };
-  const userPreviews = async (rows: Rows, options: PgQueryOptions): Promise<Map<string, UserPreviews>> => {
+  type PreviewSide = "first" | "last";
+  type UserPreviews = Record<PreviewSide, string>;
+  const previewSides = {
+    first: { column: "first_user_preview", order: "ASC", maxLen: FIRST_PREVIEW_LEN },
+    last: { column: "last_user_preview", order: "DESC", maxLen: LAST_PREVIEW_LEN },
+  } as const;
+  const userPreviews = async (
+    rows: Rows,
+    options: PgQueryOptions,
+    sides: readonly PreviewSide[] = ["first", "last"],
+  ): Promise<Map<string, UserPreviews>> => {
     const out = new Map<string, UserPreviews>();
     const missing: string[] = [];
     for (const r of rows) {
-      const first = r.first_user_preview as string | null;
-      const last = r.last_user_preview as string | null;
-      out.set(r.id as string, { first: first ?? "", last: last ?? "" });
-      if ((first === null || last === null) && (r.turns == null || Number(r.turns) > 0)) missing.push(r.id as string);
+      const stored = (side: PreviewSide) => r[previewSides[side].column] as string | null;
+      out.set(r.id as string, { first: stored("first") ?? "", last: stored("last") ?? "" });
+      if (sides.some((side) => stored(side) === null) && (r.turns == null || Number(r.turns) > 0)) {
+        missing.push(r.id as string);
+      }
     }
     if (!missing.length) return out;
+    const derivedColumns = sides.map((side) => {
+      const { column, order } = previewSides[side];
+      return `s.${column}, CASE WHEN s.${column} IS NULL THEN
+                (SELECT e.payload FROM session_entries e
+                  WHERE e.session_id = s.id AND ${userTurn("e")} ORDER BY e.seq ${order} LIMIT 1) END AS ${side}_user`;
+    });
     const derived = await q(
-      `SELECT s.id, s.first_user_preview, s.last_user_preview,
-              (SELECT fe.payload FROM session_entries fe
-                WHERE fe.session_id = s.id AND ${userTurn("fe")} ORDER BY fe.seq ASC LIMIT 1) AS first_user,
-              (SELECT le.payload FROM session_entries le
-                WHERE le.session_id = s.id AND ${userTurn("le")} ORDER BY le.seq DESC LIMIT 1) AS last_user
-         FROM sessions s WHERE s.id = ANY($1)`,
+      `SELECT s.id, ${derivedColumns.join(", ")} FROM sessions s WHERE s.id = ANY($1)`,
       [missing],
       options,
     ).catch((error: unknown) => {
@@ -910,10 +921,11 @@ export function createPostgresSessionStore(connectionString: string, opts: Store
       return reportFailureAs("sessions: derive legacy user previews", [] as Rows)(error);
     });
     for (const r of derived) {
-      out.set(r.id as string, {
-        first: (r.first_user_preview as string | null) ?? storedPreview(parsedPayload(r.first_user), FIRST_PREVIEW_LEN),
-        last: (r.last_user_preview as string | null) ?? storedPreview(parsedPayload(r.last_user), LAST_PREVIEW_LEN),
-      });
+      const previews = out.get(r.id as string)!;
+      for (const side of sides) {
+        const { column, maxLen } = previewSides[side];
+        previews[side] = (r[column] as string | null) ?? storedPreview(parsedPayload(r[`${side}_user`]), maxLen);
+      }
     }
     return out;
   };
@@ -1803,11 +1815,12 @@ export function createPostgresSessionStore(connectionString: string, opts: Store
       if (sessionIds.length === 0) return out;
       const options = { timeoutMs: ADMIN_READ_TIMEOUT_MS };
       const rows = await q(
-        "SELECT id, turns, '' AS first_user_preview, last_user_preview FROM sessions WHERE id = ANY($1)",
+        "SELECT id, turns, last_user_preview FROM sessions WHERE id = ANY($1)",
         [sessionIds],
         options,
       );
-      for (const [id, preview] of await userPreviews(rows, options)) if (preview.last) out.set(id, preview.last);
+      for (const [id, preview] of await userPreviews(rows, options, ["last"]))
+        if (preview.last) out.set(id, preview.last);
       return out;
     },
 
