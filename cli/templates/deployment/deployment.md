@@ -23,19 +23,18 @@ it in place. If the repository has not been initialized, collect:
   the local machine, is for a quick local test drive only, and is outside this
   workflow; never present it as the recommended path for a real deployment;
 - the first administrator's verified work email;
-- how people sign in: the built-in `auth` broker, which emails a one-time link,
-  or an external OIDC provider. Ask whether the company runs on Slack before
-  assuming the broker — Slack sign-in needs no email transport, no sending
-  domain, and no DNS, and domain verification is the step most likely to stall
-  a deploy. Recommend Slack sign-in to a Slack workspace and the broker
-  otherwise;
-- model provider: Anthropic, OpenAI, or OpenRouter (one key that routes to
-  many models). This is a deployment choice, not a post-deploy one: it becomes
-  `modelProvider` in `qm.config.jsonc`, which makes that provider's API key a
-  required secret. Collect the key in the same pass as the other credentials —
-  a deployment that cannot answer one message is not finished. An operator who
-  genuinely wants to defer omits `modelProvider` and adds the key from the
-  Admin page later, but do not offer that as the default;
+- how people sign in: the built-in `auth` broker supports email and password
+  for getting started without email delivery, or one-time email links; an
+  external OIDC provider is another option. Ask whether the company runs on
+  Slack, which needs no email transport or DNS. Read
+  `.codex/skills/deploy-qm/references/sign-in.md` before collecting credentials;
+- model access: an existing LiteLLM-style router endpoint, or a direct
+  Anthropic, OpenAI, or OpenRouter key. Ask about an existing router before
+  requesting a new provider account. Direct keys use `modelProvider` in
+  `qm.config.jsonc`; routers follow
+  `.codex/skills/deploy-qm/references/model-gateway.md`. Collect the chosen
+  endpoint and credentials in the same pass — a deployment that cannot
+  answer one message is not finished;
 - model;
 - region and provider account or organization;
 - whether the provider hostname is acceptable;
@@ -76,6 +75,8 @@ that bootstraps it.
 `--model-provider` takes `anthropic`, `openai`, or `openrouter` and defaults to
 `anthropic`. It writes `modelProvider` into the scaffolded config, which is what
 promotes that provider's key from an optional fallback to a required secret.
+For a router, there is no `--model-provider litellm` value: remove the scaffold's
+`modelProvider` before `qm setup` and apply the gateway reference instead.
 
 For an already-initialized clone, install reproducibly. Use `npm ci` when
 `package-lock.json` exists; otherwise use `npm install` to create it:
@@ -100,13 +101,13 @@ existing deployment config.
 Set the exact lowercased administrator email in `.env` as
 `ADMIN_GRANTS=<email>:org_admin`.
 
-Follow the sign-in route chosen in step 1. Only the `auth` broker needs an email
-transport; skip to "Slack sign-in" below when the operator picked Slack, and
-skip `references/email.md` entirely with it.
+Follow the sign-in route chosen in step 1. Only email-link sign-in needs an
+email transport. Password setup is in `references/sign-in.md`; skip email
+configuration for that route or an external OIDC provider.
 
 ### The built-in broker
 
-The `auth` broker emails a one-time link. There is no identity provider to
+The `auth` broker supports password sign-in and one-time email links. There is no identity provider to
 register: the CLI generates the broker's signing key and the portal's client
 credentials and derives every `OIDC_*` value from `publicUrl`. Setting any of
 them by hand is refused.
@@ -117,7 +118,7 @@ It needs the deployment's local signing secret and creates no account or role
 grant. Keep the link private. `qm setup` asks whether to configure email now;
 skip that step for an initial administrator-only deployment.
 
-For ordinary user sign-in, the operator supplies a way to send emails. Do not ask them to
+For email-link sign-in, the operator supplies a way to send emails. Do not ask them to
 pick a transport by name; ask what they already use for email. An existing
 mail account or relay (Google Workspace, Postmark, SES, Fastmail) means SMTP —
 recommend it, since it needs no DNS work — and only an operator who prefers
@@ -182,8 +183,10 @@ mint limits, the boot refusals, and what anonymous visitors are denied.
 
 ### The base model
 
-Whichever sign-in route the deployment takes, the base model needs a key in the
-same pass. `modelProvider` decides which one `qm setup` asks for —
+For a router, follow `references/model-gateway.md` and skip the direct-key
+instructions below. Gateway-only deployments are configured, not deferred.
+
+For direct providers, the base model needs a key in the same pass. `modelProvider` decides which one `qm setup` asks for —
 `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `OPENROUTER_API_KEY` — and the wizard
 prints where to mint it. The operator owns the billing relationship, so they
 create the key; you only place it. It is a required secret, so `qm doctor` calls
@@ -230,7 +233,9 @@ error log, and archives itself. It does not recall or capture administrator
 memory. Fly runs it inside the core machine; AWS runs it as a one-off task on
 the core service's private network. It does not add a public session endpoint.
 
-Open `adminOnboardingUrl` from the JSON output and confirm Model provider
+On the gateway route, verify the discovered model and real response as described
+in `references/model-gateway.md`; do not require a direct-provider key card.
+For direct providers, open `adminOnboardingUrl` from the JSON output and confirm Model provider
 reports the chosen vendor as configured, sourced from the environment. It does
 when `modelProvider` is set: the key travelled with the rest of the deployment
 secrets, so there is nothing to paste here. Enter and validate a key on that

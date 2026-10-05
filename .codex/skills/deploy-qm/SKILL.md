@@ -12,11 +12,12 @@ email setup and use `qm admin-login`; ordinary email sign-in needs a transport. 
 `references/slack.md` only when Slack is requested.
 
 A deployment needs a base model key and a way for people to sign in. Collect
-both in the same pass. The base model provider is a deployment choice recorded
-as `modelProvider`, not a setting to leave for the Admin page. Sign-in is either
-the built-in `auth` broker, with optional email setup for an initial admin-only
-deployment, or an external OIDC provider such as Slack. Read `references/email.md`
-once the operator has chosen the broker.
+both in the same pass. Offer email and password for getting started, email
+links, or an external OIDC provider such as Slack; read `references/sign-in.md`
+before choosing. For models, offer direct Anthropic, OpenAI, or OpenRouter
+keys (`modelProvider`), or an existing LiteLLM-style router endpoint. Read
+`references/model-gateway.md` for the router path; it does not require a direct
+provider key or a new provider account.
 
 Use the installed `@yc-software/qm` dependency through `npm exec qm -- <command>`. Do
 not require or clone the QM source repository. Complete every acceptance check
