@@ -1384,6 +1384,11 @@ test(
       );
       const emptyRow = all.find((r) => r.id === empty.id)!;
       assert.deepEqual([emptyRow.firstMessage, emptyRow.lastMessage], ["", ""], "an entry-less legacy row is blank");
+      assert.deepEqual(
+        [...(await s.lastUserMessages([ids[1]!, empty.id, junk.id]))],
+        [[ids[1]!, "close 1"]],
+        "lastUserMessages derives legacy previews and omits rows without a usable user turn",
+      );
 
       const { lease } = await s.acquireLease(ids[0]!);
       await s.append(lease!, { type: "user", payload: { text: "fresh" }, scopeLabel: scope });

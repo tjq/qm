@@ -260,12 +260,6 @@ export function createPostgresSessionStore(connectionString: string, opts: Store
   const hasOrigin = (alias: string, origin: SessionOrigin): string => `${originExpr(alias)} = '${origin}'`;
   const originFilterClause = (alias: string, origin: SessionOriginFilter): string =>
     origin === "other_background" ? `${originExpr(alias)} NOT IN ('conversation', 'cron')` : hasOrigin(alias, origin);
-  const previewExpr = (col: string): string =>
-    `(SELECT CASE WHEN json_typeof(j -> 'text') = 'string' THEN j ->> 'text'
-                  WHEN json_typeof(j) = 'string' THEN j #>> '{}'
-                  ELSE NULL END
-        FROM (SELECT safe_json(replace(${col}, '\\u0000', '')) AS j) _)`;
-
   const spendSql = `WITH RECURSIVE ancestry AS (
            SELECT s.id AS session_id, s.parent_session_id, ${originExpr("s")} AS origin, ARRAY[s.id] AS path
              FROM sessions s
@@ -1807,14 +1801,13 @@ export function createPostgresSessionStore(connectionString: string, opts: Store
     async lastUserMessages(sessionIds): Promise<Map<string, string>> {
       const out = new Map<string, string>();
       if (sessionIds.length === 0) return out;
+      const options = { timeoutMs: ADMIN_READ_TIMEOUT_MS };
       const rows = await q(
-        `SELECT DISTINCT ON (le.session_id) le.session_id, ${previewExpr("le.payload")} AS last_user
-           FROM session_entries le
-          WHERE le.session_id = ANY($1) AND ${userTurn("le")}
-          ORDER BY le.session_id, le.seq DESC`,
+        "SELECT id, turns, '' AS first_user_preview, last_user_preview FROM sessions WHERE id = ANY($1)",
         [sessionIds],
+        options,
       );
-      for (const r of rows) out.set(r.session_id as string, userMessagePreview(r.last_user ?? null, 100));
+      for (const [id, preview] of await userPreviews(rows, options)) if (preview.last) out.set(id, preview.last);
       return out;
     },
 
