@@ -141,7 +141,8 @@ relinquished first; members still finishing admitted work keep running under
 task protection beside the replacement tasks until they drain. A demotion
 refuses to pause a different current owner. Unresponsive members are never
 assumed dead: `awsRetireBackgroundWorkMembers` requires exact instance, task ARN,
-and generation identities plus ECS evidence that each task stopped. This recovery
+and generation identities plus ECS evidence that each task stopped: its STOPPED
+record, or ECS reporting its exact cluster-scoped task ARN missing. This recovery
 is also available before bootstrap for stopped legacy members.
 
 Core secret uploads defer activation to a subsequent staged `up --restart core`.

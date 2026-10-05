@@ -3442,15 +3442,26 @@ export async function awsRetireBackgroundWorkMembers(
       );
       if (!member?.taskArn || member.retired)
         throw new CliError("task retirement does not match a live durable member");
+      const taskArn = member.taskArn;
       let proved = false;
       for (const peer of peers) {
         const aws = requireAws(peer.config);
         if (!member.deploymentId.startsWith(`${aws.services.core!.ecsService}:`)) continue;
         const response = awsJson<{
           tasks?: Array<{ taskArn?: string; taskDefinitionArn?: string; lastStatus?: string; group?: string }>;
-          failures?: unknown[];
-        }>(aws, ["ecs", "describe-tasks", "--cluster", aws.cluster, "--tasks", member.taskArn]);
-        const task = response.tasks?.find((item) => item.taskArn === member.taskArn);
+          failures?: Array<{ arn?: string; reason?: string }>;
+        }>(aws, ["ecs", "describe-tasks", "--cluster", aws.cluster, "--tasks", taskArn]);
+        if (
+          taskArn.startsWith(`arn:aws:ecs:${aws.region}:${aws.accountId}:task/${aws.cluster}/`) &&
+          !response.tasks?.length &&
+          response.failures?.length === 1 &&
+          response.failures[0]!.arn === taskArn &&
+          response.failures[0]!.reason === "MISSING"
+        ) {
+          proved = true;
+          continue;
+        }
+        const task = response.tasks?.find((item) => item.taskArn === taskArn);
         if (
           response.failures?.length ||
           !task ||
@@ -3471,7 +3482,7 @@ export async function awsRetireBackgroundWorkMembers(
       }
       if (!proved)
         throw new CliError(
-          "task retirement requires ECS STOPPED evidence bound to the exact service, task and deployment identity",
+          "task retirement requires ECS STOPPED evidence bound to the exact service, task and deployment identity, or ECS reporting the exact cluster-scoped task missing",
         );
     }
     return mutateBackgroundWork(awsBackgroundWorkTransport(peers[0]!.config), first.deploymentId, {

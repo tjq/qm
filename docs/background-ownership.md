@@ -62,6 +62,8 @@ When a process cannot acknowledge, the trusted operator must independently prove
 }
 ```
 
+On ECS, the stopped task record is evidence, and so is `DescribeTasks` reporting the exact cluster-scoped task ARN `MISSING` in that task's own cluster: a task ARN never moves between clusters, and ECS expires stopped records about an hour after they stop. A task ARN without its cluster segment is not evidence, because asking the wrong cluster for a bare task ID also reports `MISSING`.
+
 Retirement preserves the ownership generation, updates `lastRequestId`, and marks only the matching members retired and drained. Retired task identities cannot enroll again. An unreachable HTTP endpoint, old heartbeat, or elapsed timeout is not termination evidence.
 
 ## Live deployment session check
