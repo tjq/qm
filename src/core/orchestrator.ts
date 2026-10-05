@@ -3183,8 +3183,8 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
         );
         const history = await withTurnRequest(compacted, partial?.userSeq);
         contextRecovered =
-          history !== visibleHistory &&
-          history.some((entry) => isObj(entry.payload) && entry.payload.mode === "recent");
+          compacted !== visibleHistory &&
+          compacted.some((entry) => isObj(entry.payload) && entry.payload.mode === "recent");
         compactMs = Date.now() - compactStart;
         const documentInputs = strictReadOnly
           ? { documents: [], notices: [] }
