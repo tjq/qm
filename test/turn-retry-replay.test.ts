@@ -245,7 +245,7 @@ test("the replay does not need the session lease, so a busy session cannot reque
 async function seedTurn(
   sessions: ReturnType<typeof buildScenario>["sessions"],
   entries: Array<{
-    type: "user" | "assistant" | "thinking" | "tool_call" | "tool_result";
+    type: "user" | "assistant" | "system" | "thinking" | "tool_call" | "tool_result";
     payload: Record<string, unknown>;
   }>,
 ): Promise<number> {
@@ -383,5 +383,32 @@ test("a resume that compacts the request out of context keeps it and still conti
     "the request being resumed survives compaction",
   );
   assert.deepEqual(continued, [true], "the harness continues the assistant turn instead of prompting a note");
+  assert.doesNotMatch(turns[0]!, /Current request \(continue from recorded work/);
+});
+
+test("a resume whose request an earlier compaction already summarized brings it back and continues", async () => {
+  const { orchestrator, sessions, runs, turns, continued, histories, input } = buildScenario();
+  const run = (await runs.enqueue({ sessionId: conversation.threadRef, request: input(ASK) })).run;
+  const marker = await seedTurn(sessions, [
+    { type: "user", payload: { text: ASK, runId: run.id } },
+    { type: "tool_call", payload: { tool: "execute", callId: "c1", command: "ls" } },
+    { type: "tool_result", payload: { callId: "c1", result: "a.txt" } },
+  ]);
+  await seedTurn(sessions, [
+    { type: "system", payload: { kind: "context_summary", throughSeq: marker + 2, text: "Listed the files." } },
+    { type: "tool_call", payload: { tool: "execute", callId: "c2", command: "cat a.txt" } },
+    { type: "tool_result", payload: { callId: "c2", result: "hello" } },
+    { type: "thinking", payload: { thinking: "mid-generation when the process died" } },
+  ]);
+  await runs.noteTurnUserSeq(run.id, marker);
+
+  const retry = await orchestrator.handleTurn(input(ASK, { runId: run.id, attempt: 2 }));
+  assert.equal(retry.status, "ok");
+  assert.deepEqual(
+    histories[0]!.map((e) => e.type),
+    ["system", "user", "tool_call", "tool_result"],
+    "the request sits right after the summary, before the work that followed it",
+  );
+  assert.deepEqual(continued, [true]);
   assert.doesNotMatch(turns[0]!, /Current request \(continue from recorded work/);
 });

@@ -50,7 +50,6 @@ export interface CompactionContext {
     actorId: string;
     model?: string;
     cancel?: AbortSignal;
-    request?: SessionEntry;
   }): Promise<SessionEntry[]>;
   compactRecent(input: {
     session: Session;
@@ -61,7 +60,6 @@ export interface CompactionContext {
     actorId: string;
     model?: string;
     cancel?: AbortSignal;
-    request?: SessionEntry;
   }): Promise<SessionEntry[]>;
   scheduleBackgroundCompaction(input: {
     sessionId: string;
@@ -77,7 +75,7 @@ export function createCompaction(deps: OrchestratorDeps): CompactionContext {
   const tokenBudgetFor = (scopeLabel?: string, model?: string): number =>
     deps.maxContextTokens ?? deps.harness.models.contextTokenBudget?.(scopeLabel, model) ?? MAX_CONTEXT_TOKENS;
 
-  const boundRecent = (entries: SessionEntry[], maxContextTokens: number, request?: SessionEntry): SessionEntry[] => {
+  const boundRecent = (entries: SessionEntry[], maxContextTokens: number): SessionEntry[] => {
     const summary = entries.find((e) => contextSummaryPayload(e));
     const rest = summary ? entries.filter((e) => e !== summary) : entries;
     const kept = rest.slice(
@@ -85,7 +83,6 @@ export function createCompaction(deps: OrchestratorDeps): CompactionContext {
     );
     const goal = latestGoalEntry(rest);
     if (goal && !kept.includes(goal)) kept.unshift(goal);
-    if (request && !kept.some((e) => e.seq === request.seq)) kept.unshift(request);
     return summary ? [summary, ...kept] : kept;
   };
   const isManagedGroupScope = (scope: string): boolean => {
@@ -220,7 +217,6 @@ export function createCompaction(deps: OrchestratorDeps): CompactionContext {
     actorId: string;
     model?: string;
     cancel?: AbortSignal;
-    request?: SessionEntry;
   }): Promise<SessionEntry[] | null> {
     const summarized = await summarizeForCompaction(input, true);
     if (!summarized) return null;
@@ -235,7 +231,6 @@ export function createCompaction(deps: OrchestratorDeps): CompactionContext {
     return boundRecent(
       [summary, ...recent, ...(goalEntry ? [goalEntry] : [])],
       tokenBudgetFor(input.scopeId, input.model),
-      input.request,
     );
   }
 
@@ -248,7 +243,6 @@ export function createCompaction(deps: OrchestratorDeps): CompactionContext {
     actorId: string;
     model?: string;
     cancel?: AbortSignal;
-    request?: SessionEntry;
   }): Promise<SessionEntry[]> {
     const maxContextTokens = tokenBudgetFor(input.scopeId, input.model);
     if (!overBudgetFraction(input.visibleHistory, maxContextTokens, COMPACT_HARD_FRACTION)) {
@@ -258,7 +252,7 @@ export function createCompaction(deps: OrchestratorDeps): CompactionContext {
     return (
       rebuilt ??
       (!deps.harness.models.compactHistory || isManagedGroupScope(input.scopeId)
-        ? boundRecent(input.visibleHistory, maxContextTokens, input.request)
+        ? boundRecent(input.visibleHistory, maxContextTokens)
         : compactRecent(input))
     );
   }
@@ -280,11 +274,10 @@ export function createCompaction(deps: OrchestratorDeps): CompactionContext {
       scopeLabel: input.scopeId as ScopeId,
       createdAt: 0,
     };
-    const pinnedTokens =
-      estimateEntryTokens(marker) +
-      (goalSource ? estimateEntryTokens(goalSource) : 0) +
-      (input.request ? estimateEntryTokens(input.request) : 0);
-    let remaining = Math.max(0, budget - pinnedTokens);
+    let remaining = Math.max(
+      0,
+      budget - estimateEntryTokens(marker) - (goalSource ? estimateEntryTokens(goalSource) : 0),
+    );
     let start = rest.length;
     while (start > 0) {
       const cost = estimateEntryTokens(rest[start - 1]!);
@@ -302,10 +295,12 @@ export function createCompaction(deps: OrchestratorDeps): CompactionContext {
         retainedCalls.clear();
       }
     }
-    const tail = rest.slice(start);
-    const request = input.request;
-    const recent = request && !tail.some((e) => e.seq === request.seq) ? [request, ...tail] : tail;
-    remaining = budget - pinnedTokens - estimateHistoryTokens(tail);
+    const recent = rest.slice(start);
+    remaining =
+      budget -
+      estimateEntryTokens(marker) -
+      (goalSource ? estimateEntryTokens(goalSource) : 0) -
+      estimateHistoryTokens(recent);
     const includedPrior = prior && estimateEntryTokens(prior) <= remaining ? prior : undefined;
     const priorText = includedPrior ? contextSummaryPayload(includedPrior)!.text : undefined;
     let text = notice;
