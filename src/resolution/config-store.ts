@@ -533,11 +533,62 @@ export function createMemoryConfigStore(
         hydrated = (async () => {
           const identity = await deploymentIdentity.putIfAbsent("singleton", { orgId });
           if (identity.orgId !== orgId) throw new Error(`database belongs to org ${identity.orgId}, not ${orgId}`);
-          for (const r of await soulStore.all()) {
+          const [
+            soulRows,
+            soulHistoryRows,
+            commandPolicyRows,
+            securityPostureRows,
+            sharingPostureRows,
+            approvalGrantModesRows,
+            egressRows,
+            unfulfilledInsightsRows,
+            externalSlackParticipantsRows,
+            channelHeaderPinRows,
+            baseModelRows,
+            storedApprovedHarnesses,
+            storedInternalMemberOverrides,
+            storedOrgAmbient,
+            storedInteractiveFastMode,
+            storedIndividualModelAuth,
+            webuiModelRows,
+            peopleDirectoryUrlRows,
+            ackEmojiRows,
+            brandingRows,
+            browseMaxStepsRows,
+            browseModelRows,
+            storedAutoFlagger,
+            turnWallClockRows,
+          ] = await Promise.all([
+            soulStore.all(),
+            soulHistoryStore.all(),
+            commandPolicyStore.all(),
+            securityPostureStore.all(),
+            sharingPostureStore.all(),
+            approvalGrantModesStore.all(),
+            egressStore.all(),
+            unfulfilledInsightsStore.all(),
+            externalSlackParticipantsStore.all(),
+            channelHeaderPinStore.all(),
+            baseModelStore.all(),
+            approvedHarnessStore.get(org),
+            internalMemberOverridesStore.get(org),
+            orgAmbientStore.get(org),
+            interactiveFastModeStore.get(org),
+            individualModelAuthStore.get(org),
+            webuiModelStore.all(),
+            peopleDirectoryUrlStore.all(),
+            ackEmojiStore.all(),
+            brandingStore.all(),
+            browseMaxStepsStore.all(),
+            browseModelStore.all(),
+            autoFlaggerStore.get(org),
+            turnWallClockStore.all(),
+          ]);
+          for (const r of soulRows) {
             souls.set(r.scopeId, { content: r.content, version: r.version });
             if (r.history?.length) soulHistory.set(r.scopeId, r.history);
           }
-          for (const r of await soulHistoryStore.all()) {
+          for (const r of soulHistoryRows) {
             const legacyRevisions = legacySoulHistory.get(r.scopeId) ?? [];
             if (!legacyRevisions.some((revision) => revision.version === r.version)) legacyRevisions.push(r);
             legacySoulHistory.set(r.scopeId, legacyRevisions);
@@ -547,27 +598,26 @@ export function createMemoryConfigStore(
           }
           for (const revisions of legacySoulHistory.values()) revisions.sort((a, b) => b.version - a.version);
           for (const revisions of soulHistory.values()) revisions.sort((a, b) => b.version - a.version);
-          for (const r of await commandPolicyStore.all()) policies.set(r.scopeId, r.policy);
-          for (const r of await securityPostureStore.all()) securityPostures.set(r.scopeId, r.posture);
-          for (const r of await sharingPostureStore.all()) sharingPostures.set(r.scopeId, r.posture);
-          for (const r of await approvalGrantModesStore.all()) approvalGrantModesCache.set(r.scopeId, r.modes);
-          for (const r of await egressStore.all()) egress.set(r.scopeId, r.policy);
-          for (const r of await unfulfilledInsightsStore.all()) unfulfilledInsights.set(r.scopeId, r.on);
-          for (const r of await externalSlackParticipantsStore.all()) externalSlackParticipants.set(r.scopeId, r.on);
-          for (const r of await channelHeaderPinStore.all()) channelHeaderPin.set(r.scopeId, r.on);
-          for (const r of await baseModelStore.all()) baseModels.set(r.scopeId, r);
-          approvedHarnesses = (await approvedHarnessStore.get(org))?.ids ?? null;
-          internalMemberOverrides = (await internalMemberOverridesStore.get(org))?.members ?? [];
-          orgAmbient = (await orgAmbientStore.get(org))?.on ?? true;
-          interactiveFastMode = (await interactiveFastModeStore.get(org))?.on ?? false;
-          individualModelAuth = (await individualModelAuthStore.get(org))?.on ?? false;
-          for (const r of await webuiModelStore.all()) webuiModels.set(r.scopeId, r.ids);
-          for (const r of await peopleDirectoryUrlStore.all()) peopleDirectoryUrls.set(r.scopeId, r.url);
-          for (const r of await ackEmojiStore.all()) ackEmoji.set(r.scopeId, r.names);
-          for (const r of await brandingStore.all()) branding.set(r.scopeId, r.branding);
-          for (const r of await browseMaxStepsStore.all()) browseMaxSteps.set(r.scopeId, r.steps);
-          for (const r of await browseModelStore.all()) browseModels.set(r.scopeId, r.modelId);
-          const storedAutoFlagger = await autoFlaggerStore.get(org);
+          for (const r of commandPolicyRows) policies.set(r.scopeId, r.policy);
+          for (const r of securityPostureRows) securityPostures.set(r.scopeId, r.posture);
+          for (const r of sharingPostureRows) sharingPostures.set(r.scopeId, r.posture);
+          for (const r of approvalGrantModesRows) approvalGrantModesCache.set(r.scopeId, r.modes);
+          for (const r of egressRows) egress.set(r.scopeId, r.policy);
+          for (const r of unfulfilledInsightsRows) unfulfilledInsights.set(r.scopeId, r.on);
+          for (const r of externalSlackParticipantsRows) externalSlackParticipants.set(r.scopeId, r.on);
+          for (const r of channelHeaderPinRows) channelHeaderPin.set(r.scopeId, r.on);
+          for (const r of baseModelRows) baseModels.set(r.scopeId, r);
+          approvedHarnesses = storedApprovedHarnesses?.ids ?? null;
+          internalMemberOverrides = storedInternalMemberOverrides?.members ?? [];
+          orgAmbient = storedOrgAmbient?.on ?? true;
+          interactiveFastMode = storedInteractiveFastMode?.on ?? false;
+          individualModelAuth = storedIndividualModelAuth?.on ?? false;
+          for (const r of webuiModelRows) webuiModels.set(r.scopeId, r.ids);
+          for (const r of peopleDirectoryUrlRows) peopleDirectoryUrls.set(r.scopeId, r.url);
+          for (const r of ackEmojiRows) ackEmoji.set(r.scopeId, r.names);
+          for (const r of brandingRows) branding.set(r.scopeId, r.branding);
+          for (const r of browseMaxStepsRows) browseMaxSteps.set(r.scopeId, r.steps);
+          for (const r of browseModelRows) browseModels.set(r.scopeId, r.modelId);
           autoFlaggerConfig = storedAutoFlagger
             ? {
                 harnessId: storedAutoFlagger.harnessId,
@@ -575,7 +625,7 @@ export function createMemoryConfigStore(
                 rubric: storedAutoFlagger.rubric,
               }
             : null;
-          for (const r of await turnWallClockStore.all()) turnWallClocks.set(r.scopeId, r.sec);
+          for (const r of turnWallClockRows) turnWallClocks.set(r.scopeId, r.sec);
         })();
       }
       return hydrated;

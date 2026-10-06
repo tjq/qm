@@ -3,8 +3,10 @@ import assert from "node:assert/strict";
 import { createMemoryMap } from "../src/persistence/durable-map.ts";
 import {
   createMemoryConfigStore,
+  type PersistedCommandPolicy,
   type PersistedDeploymentIdentity,
   type PersistedInternalMemberOverrides,
+  type PersistedSoul,
 } from "../src/resolution/config-store.ts";
 
 test("a durable database is pinned to one organization", async () => {
@@ -13,6 +15,38 @@ test("a durable database is pinned to one organization", async () => {
   await assert.rejects(
     createMemoryConfigStore("other", { deploymentIdentity }).hydrate!(),
     /database belongs to org default-org/,
+  );
+});
+
+test("hydrate reads its stores concurrently and fails when any read fails", async () => {
+  let inFlight = 0;
+  let peak = 0;
+  const tracked = <T>(failure?: Error) => {
+    const map = createMemoryMap<T>();
+    return {
+      ...map,
+      async all() {
+        inFlight++;
+        peak = Math.max(peak, inFlight);
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        inFlight--;
+        if (failure) throw failure;
+        return map.all();
+      },
+    };
+  };
+  await createMemoryConfigStore("default-org", {
+    souls: tracked<PersistedSoul>(),
+    commandPolicies: tracked<PersistedCommandPolicy>(),
+  }).hydrate!();
+  assert.equal(peak, 2);
+  const failure = new Error("policy read failed");
+  await assert.rejects(
+    createMemoryConfigStore("default-org", {
+      souls: tracked<PersistedSoul>(),
+      commandPolicies: tracked<PersistedCommandPolicy>(failure),
+    }).hydrate!(),
+    (error: unknown) => error === failure,
   );
 });
 
