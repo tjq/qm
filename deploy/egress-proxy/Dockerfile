@@ -1,5 +1,17 @@
 FROM envoyproxy/envoy:v1.31.5@sha256:2ef22f7a72d3008d68bd4912f52b9a3d466d00db31a567dffa1b103e42eb9198 AS envoy
 
+FROM node:24-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+COPY cli/package.json ./cli/
+COPY .husky/install.mjs .husky/install.mjs
+RUN npm ci
+COPY src ./src
+COPY plugins/chassis ./plugins/chassis
+COPY tsconfig.json ./
+RUN npx esbuild src/egress-authz-main.ts --bundle --platform=node --format=esm --outfile=egress-authz.mjs \
+  "--banner:js=import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);"
+
 FROM node:24-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d
 COPY --from=envoy /usr/local/bin/envoy /usr/local/bin/envoy
 
@@ -7,15 +19,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends iptables && rm 
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
-COPY .husky/install.mjs .husky/install.mjs
-RUN npm ci --omit=dev
-
-COPY src ./src
-COPY cli/src/credential-paths.ts cli/src/tool-descriptor.ts ./cli/src/
-COPY plugins/chassis ./plugins/chassis
-COPY tsconfig.json ./
-RUN node --input-type=module -e "await import('./src/egress-authz-main.ts')"
+COPY --from=build /app/egress-authz.mjs ./
+RUN node --input-type=module -e "await import('/app/egress-authz.mjs')"
 COPY deploy/egress-proxy/envoy.yaml deploy/egress-proxy/start.sh ./
 RUN chmod +x start.sh
 # A rejected config is a fleet-wide outage: start.sh kills the container when Envoy dies, so an

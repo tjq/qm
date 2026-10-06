@@ -9,7 +9,7 @@ firewall() {
 firewall iptables -A OUTPUT -d 169.254.0.0/16 -j REJECT
 firewall ip6tables -A OUTPUT -d fd00:ec2::254 -j REJECT
 
-node /app/src/egress-authz-main.ts &
+node /app/egress-authz.mjs &
 AUTHZ_PID=$!
 envoy -c /app/envoy.yaml &
 ENVOY_PID=$!
